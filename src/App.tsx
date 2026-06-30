@@ -1,0 +1,1908 @@
+import {
+  addEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
+  Background,
+  BackgroundVariant,
+  Controls,
+  Handle,
+  MarkerType,
+  MiniMap,
+  Panel,
+  Position,
+  ReactFlow,
+  useReactFlow,
+  type Connection,
+  type EdgeChange,
+  type NodeChange,
+  type NodeProps
+} from "@xyflow/react";
+import {
+  AlertTriangle,
+  Battery,
+  Boxes,
+  Camera,
+  CheckCircle2,
+  CircleDot,
+  Compass,
+  Copy,
+  Cpu,
+  Download,
+  FilePlus,
+  FileJson,
+  FolderOpen,
+  Gauge,
+  GitBranch,
+  MapPin,
+  Pencil,
+  Play,
+  Plus,
+  PlugZap,
+  Radio,
+  RotateCcw,
+  Rotate3D,
+  Save,
+  ScanLine,
+  Search,
+  Settings,
+  Sparkles,
+  Trash2,
+  Zap,
+  type LucideIcon
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { defaultSettings, type ComponentDefinition, type ComponentPropertyDefinition } from "./domain/design";
+import type { DesignEdge, DesignNode, GcsTargetSettings, SignalKind, SimulationSettings, UavDesign } from "./domain/design";
+import {
+  componentCatalog,
+  createComponentNode,
+  defaultPropertiesForComponent,
+  getComponentDefinition,
+  getPort,
+  productSpecProperties
+} from "./domain/componentCatalog";
+import { createStarterDesign } from "./domain/starterDesign";
+import { expectedMotorCount, validateDesign } from "./domain/validators";
+import {
+  buildParamFile,
+  buildSitlPlan,
+  getSystemStatus,
+  launchSitl,
+  locateSimVehicle,
+  saveDesign,
+  type SitlPlan,
+  type SystemStatus
+} from "./lib/api";
+
+const iconMap = {
+  AlertTriangle,
+  Battery,
+  Boxes,
+  Camera,
+  CheckCircle2,
+  CircleDot,
+  Compass,
+  Cpu,
+  Gauge,
+  MapPin,
+  Radio,
+  Rotate3D,
+  ScanLine,
+  Zap,
+  Frame: Boxes
+};
+
+type AppTab = "inspector" | "validation" | "simulation" | "performance";
+
+const NODE_CARD_WIDTH = 196;
+const NODE_CARD_MIN_HEIGHT = 142;
+const NODE_PLACEMENT_GAP = 34;
+const NODE_PORT_TOP = 96;
+const SIGNAL_KINDS: SignalKind[] = ["power", "pwm", "uart", "i2c", "can", "analog", "video", "mount", "telemetry"];
+const signalColors: Record<SignalKind, string> = {
+  power: "#c56b21",
+  pwm: "#2d6cdf",
+  uart: "#138a83",
+  i2c: "#258a47",
+  can: "#475569",
+  analog: "#7d5fb2",
+  video: "#bd3d78",
+  mount: "#6b7280",
+  telemetry: "#0f766e"
+};
+
+const SAQ_FORMAT = "ardupilot-uav-lab.workspace";
+const SAQ_VERSION = 1;
+
+interface SaqWorkspaceFile {
+  format: typeof SAQ_FORMAT;
+  version: typeof SAQ_VERSION;
+  savedAt: string;
+  design: UavDesign;
+}
+
+function signalLabel(signal: SignalKind) {
+  return signal.toUpperCase();
+}
+
+function safeFileName(value: string) {
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || "uav-space";
+}
+
+function downloadText(fileName: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function designFromState(
+  name: string,
+  nodes: DesignNode[],
+  edges: DesignEdge[],
+  settings: SimulationSettings,
+  id?: string
+): UavDesign {
+  return {
+    id,
+    name,
+    nodes,
+    edges,
+    settings
+  };
+}
+
+function ObjectShape({ componentType, icon: Icon }: { componentType: string; icon: LucideIcon }) {
+  return (
+    <div className={`object-shape object-shape-${componentType}`} aria-hidden="true">
+      <span className="shape-arm shape-arm-a" />
+      <span className="shape-arm shape-arm-b" />
+      <span className="shape-plate" />
+      <span className="shape-lens" />
+      <Icon size={24} />
+    </div>
+  );
+}
+
+function ComponentNode({ data, selected }: NodeProps<DesignNode>) {
+  const definition = getComponentDefinition(data.componentType);
+  const Icon = iconMap[definition.icon as keyof typeof iconMap] ?? Boxes;
+  const inputPorts = definition.ports.filter((port) => port.direction === "input");
+  const outputPorts = definition.ports.filter((port) => port.direction === "output");
+  const editObject = typeof data.onEdit === "function" ? (data.onEdit as () => void) : undefined;
+  const portRows = Math.max(inputPorts.length, outputPorts.length, 1);
+  const minHeight = Math.max(NODE_CARD_MIN_HEIGHT, NODE_PORT_TOP + portRows * 20 + 18);
+
+  return (
+    <div className={`component-node node-shape-${data.componentType} ${selected ? "selected" : ""} ${data.health ?? "ok"}`} style={{ minHeight }}>
+      <div className="node-header">
+        <span className="node-icon">
+          <Icon size={16} />
+        </span>
+        <span className="node-title">{data.label}</span>
+        {editObject ? (
+          <button
+            aria-label="Edit object"
+            className="node-action nodrag"
+            title="Edit object"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              editObject();
+            }}
+          >
+            <Pencil size={13} />
+          </button>
+        ) : null}
+      </div>
+      <div className="node-meta">{definition.category}</div>
+      <div className="node-object-shape">
+        <ObjectShape componentType={data.componentType} icon={Icon} />
+      </div>
+
+      {inputPorts.map((port, index) => (
+        <div
+          className={`node-port input ${port.kind}`}
+          key={port.id}
+          style={{ top: NODE_PORT_TOP + index * 20 }}
+          title={`${port.label} ${port.kind}`}
+        >
+          <span>{port.label}</span>
+          <Handle className={`flow-handle ${port.kind}`} id={port.id} position={Position.Left} type="target" />
+        </div>
+      ))}
+
+      {outputPorts.map((port, index) => (
+        <div
+          className={`node-port output ${port.kind}`}
+          key={port.id}
+          style={{ top: NODE_PORT_TOP + index * 20 }}
+          title={`${port.label} ${port.kind}`}
+        >
+          <span>{port.label}</span>
+          <Handle className={`flow-handle ${port.kind}`} id={port.id} position={Position.Right} type="source" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const nodeTypes = { componentNode: ComponentNode };
+
+function propertyInput(
+  property: ComponentPropertyDefinition,
+  value: string | number | boolean,
+  onChange: (value: string | number | boolean) => void
+) {
+  if (property.type === "select") {
+    return (
+      <select value={String(value)} onChange={(event) => onChange(event.target.value)}>
+        {property.options?.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (property.type === "boolean") {
+    return (
+      <label className="toggle-row">
+        <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
+        <span>{Boolean(value) ? "Enabled" : "Disabled"}</span>
+      </label>
+    );
+  }
+
+  return (
+    <input
+      type={property.type === "number" ? "number" : "text"}
+      min={property.min}
+      max={property.max}
+      value={String(value)}
+      onChange={(event) => onChange(property.type === "number" ? Number(event.target.value) : event.target.value)}
+    />
+  );
+}
+
+function nodesByType(nodes: DesignNode[], type: string) {
+  return nodes.filter((node) => node.data.componentType === type);
+}
+
+function firstNodeByType(nodes: DesignNode[], type: string) {
+  return nodes.find((node) => node.data.componentType === type);
+}
+
+function estimatedNodeHeight(componentType: string) {
+  const definition = getComponentDefinition(componentType);
+  const inputCount = definition.ports.filter((port) => port.direction === "input").length;
+  const outputCount = definition.ports.filter((port) => port.direction === "output").length;
+  return Math.max(NODE_CARD_MIN_HEIGHT, NODE_PORT_TOP + Math.max(inputCount, outputCount, 1) * 20 + 18);
+}
+
+function nodeRect(node: Pick<DesignNode, "position" | "data">) {
+  return {
+    x: node.position.x,
+    y: node.position.y,
+    width: NODE_CARD_WIDTH,
+    height: estimatedNodeHeight(node.data.componentType)
+  };
+}
+
+function rectsOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+  gap: number
+) {
+  return !(
+    a.x + a.width + gap <= b.x ||
+    b.x + b.width + gap <= a.x ||
+    a.y + a.height + gap <= b.y ||
+    b.y + b.height + gap <= a.y
+  );
+}
+
+function findOpenNodePosition(nodes: DesignNode[], componentType: string, preferred?: { x: number; y: number }) {
+  const existingRects = nodes.map(nodeRect);
+  const height = estimatedNodeHeight(componentType);
+  const isOpen = (position: { x: number; y: number }) => {
+    const candidate = { x: position.x, y: position.y, width: NODE_CARD_WIDTH, height };
+    return existingRects.every((existing) => !rectsOverlap(candidate, existing, NODE_PLACEMENT_GAP));
+  };
+
+  if (preferred && isOpen(preferred)) {
+    return preferred;
+  }
+
+  const startX = 80;
+  const startY = 40;
+  const stepX = NODE_CARD_WIDTH + NODE_PLACEMENT_GAP + 30;
+  const stepY = Math.max(estimatedNodeHeight("flight-controller"), height) + NODE_PLACEMENT_GAP + 20;
+  const rightMost = existingRects.reduce((max, rect) => Math.max(max, rect.x + rect.width), 900);
+  const columns = Math.max(5, Math.ceil((rightMost - startX + stepX) / stepX) + 2);
+
+  for (let row = 0; row < 16; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const position = { x: startX + column * stepX, y: startY + row * stepY };
+      if (isOpen(position)) {
+        return position;
+      }
+    }
+  }
+
+  const lowest = existingRects.reduce((max, rect) => Math.max(max, rect.y + rect.height), startY);
+  return { x: startX, y: lowest + NODE_PLACEMENT_GAP + 20 };
+}
+
+function signalForEdge(edge: DesignEdge, nodes: DesignNode[]): SignalKind | undefined {
+  if (edge.data?.signal) {
+    return edge.data.signal;
+  }
+
+  const source = nodes.find((node) => node.id === edge.source);
+  const target = nodes.find((node) => node.id === edge.target);
+  if (!source || !target) {
+    return undefined;
+  }
+
+  const sourcePort = getPort(source.data.componentType, edge.sourceHandle);
+  const targetPort = getPort(target.data.componentType, edge.targetHandle);
+
+  if (sourcePort?.kind && sourcePort.kind === targetPort?.kind) {
+    return sourcePort.kind;
+  }
+
+  return sourcePort?.kind ?? targetPort?.kind;
+}
+
+function targetDefaults(settings: SimulationSettings): GcsTargetSettings[] {
+  return settings.gcsTargets?.length
+    ? settings.gcsTargets
+    : [
+        { id: "qgc", name: "QGroundControl", enabled: true, host: settings.gcsHost || "127.0.0.1", port: settings.gcsPort || 14550 },
+        { id: "mission-planner", name: "Mission Planner", enabled: true, host: "127.0.0.1", port: 14551 }
+      ];
+}
+
+function settingsWithDefaults(settings?: Partial<SimulationSettings>): SimulationSettings {
+  const merged = { ...defaultSettings, ...(settings ?? {}) } as SimulationSettings;
+  return {
+    ...merged,
+    gcsTargets: targetDefaults(merged).map((target) => ({ ...target }))
+  };
+}
+
+function normalizeNode(rawNode: unknown): DesignNode | null {
+  if (!rawNode || typeof rawNode !== "object") {
+    return null;
+  }
+
+  const node = rawNode as Partial<DesignNode>;
+  const data = node.data as Partial<DesignNode["data"]> | undefined;
+  const componentType = typeof data?.componentType === "string" ? data.componentType : "";
+  const position = node.position ?? { x: 80, y: 40 };
+
+  try {
+    const definition = getComponentDefinition(componentType);
+    return {
+      ...node,
+      id: typeof node.id === "string" && node.id ? node.id : `${componentType}-${crypto.randomUUID()}`,
+      type: "componentNode",
+      position: {
+        x: Number(position.x) || 0,
+        y: Number(position.y) || 0
+      },
+      selected: false,
+      data: {
+        componentType,
+        label: typeof data?.label === "string" && data.label ? data.label : definition.name,
+        properties: {
+          ...defaultPropertiesForComponent(componentType),
+          ...(data?.properties && typeof data.properties === "object" ? data.properties : {})
+        }
+      }
+    } as DesignNode;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeDesignPayload(payload: unknown, fallbackName = "Loaded Space"): UavDesign {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("The selected file is not a valid SAQ workspace.");
+  }
+
+  const candidate = payload as Partial<SaqWorkspaceFile> & Partial<UavDesign>;
+  const rawDesign = candidate.format === SAQ_FORMAT ? candidate.design : candidate;
+
+  if (!rawDesign || typeof rawDesign !== "object") {
+    throw new Error("The selected SAQ file does not contain a workspace design.");
+  }
+
+  const design = rawDesign as Partial<UavDesign>;
+  const nodes = Array.isArray(design.nodes) ? design.nodes.map(normalizeNode).filter((node): node is DesignNode => Boolean(node)) : [];
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = Array.isArray(design.edges)
+    ? design.edges
+        .filter((edge): edge is DesignEdge => Boolean(edge?.source && edge?.target && nodeIds.has(edge.source) && nodeIds.has(edge.target)))
+        .map((edge) => ({
+          ...edge,
+          type: edge.type ?? "smoothstep",
+          markerEnd: edge.markerEnd ?? { type: MarkerType.ArrowClosed }
+        }))
+    : [];
+
+  return {
+    id: typeof design.id === "string" ? design.id : undefined,
+    name: typeof design.name === "string" && design.name.trim() ? design.name : fallbackName,
+    nodes,
+    edges,
+    settings: settingsWithDefaults(design.settings as Partial<SimulationSettings> | undefined),
+    updatedAt: typeof design.updatedAt === "string" ? design.updatedAt : undefined
+  };
+}
+
+function saqWorkspaceFor(design: UavDesign): SaqWorkspaceFile {
+  return {
+    format: SAQ_FORMAT,
+    version: SAQ_VERSION,
+    savedAt: new Date().toISOString(),
+    design: {
+      ...design,
+      updatedAt: new Date().toISOString()
+    }
+  };
+}
+
+interface BuildGuideStep {
+  componentType: string;
+  placement: string;
+  optional?: boolean;
+  target: (settings: SimulationSettings) => number;
+}
+
+interface BuildGuideItem extends BuildGuideStep {
+  count: number;
+  complete: boolean;
+  definition: ComponentDefinition;
+  targetCount: number;
+}
+
+const singleComponentTarget = () => 1;
+const motorDrivenTarget = (settings: SimulationSettings) => Math.max(expectedMotorCount(settings), 0);
+
+const buildGuideSteps: BuildGuideStep[] = [
+  { componentType: "frame", placement: "Start at the canvas center, then choose layout and wheelbase.", target: singleComponentTarget },
+  { componentType: "flight-controller", placement: "Place near the frame center for short power, sensor, and PWM routes.", target: singleComponentTarget },
+  { componentType: "battery", placement: "Place on the left power side before the power module.", target: singleComponentTarget },
+  { componentType: "power-module", placement: "Place between battery and flight controller.", target: singleComponentTarget },
+  { componentType: "esc", placement: "Place one ESC near each motor arm.", target: motorDrivenTarget },
+  { componentType: "motor", placement: "Place motors around the frame in the selected layout order.", target: motorDrivenTarget },
+  { componentType: "gps", placement: "Place above or away from power wiring and connect by UART.", target: singleComponentTarget },
+  { componentType: "compass", placement: "Place away from high current wiring and connect by I2C.", target: singleComponentTarget },
+  { componentType: "telemetry-radio", placement: "Place at the right comms side and connect by UART.", target: singleComponentTarget },
+  { componentType: "rangefinder", placement: "Place on the lower sensor side for altitude or obstacle data.", optional: true, target: singleComponentTarget },
+  { componentType: "camera", placement: "Place with the payload stack after core flight parts are complete.", optional: true, target: singleComponentTarget },
+  { componentType: "gimbal", placement: "Place after camera when a stabilized payload mount is needed.", optional: true, target: singleComponentTarget }
+];
+
+function buildGuideFor(nodes: DesignNode[], settings: SimulationSettings) {
+  const items: BuildGuideItem[] = buildGuideSteps.map((step) => {
+    const targetCount = step.target(settings);
+    const count = nodesByType(nodes, step.componentType).length;
+    return {
+      ...step,
+      count,
+      complete: targetCount === 0 || count >= targetCount,
+      definition: getComponentDefinition(step.componentType),
+      targetCount
+    };
+  });
+  const next = items.find((item) => !item.complete && item.targetCount > 0);
+  const requiredItems = items.filter((item) => !item.optional && item.targetCount > 0);
+  const completedRequired = requiredItems.filter((item) => item.complete).length;
+
+  return {
+    completedRequired,
+    items,
+    next,
+    requiredTotal: requiredItems.length,
+    start: items[0]
+  };
+}
+
+interface MassEstimate {
+  nodeId: string;
+  label: string;
+  componentType: string;
+  massG: number;
+  source: "spec" | "property" | "estimated";
+}
+
+interface BatteryEstimate {
+  label: string;
+  cells: number;
+  capacityAh: number;
+  nominalVoltage: number;
+  energyWh: number;
+  usableWh: number;
+  maxCurrentA: number;
+}
+
+interface PerformanceEstimate {
+  totalMassG: number;
+  batteryEnergyWh: number;
+  usableEnergyWh: number;
+  totalThrustG: number;
+  thrustToWeight: number;
+  hoverThrottle: number;
+  hoverPowerW: number;
+  cruisePowerW: number;
+  hoverEnduranceMin: number;
+  missionEnduranceMin: number;
+  rangeKm: number;
+  maxSpeedMps: number;
+  payloadMarginG: number;
+  performanceScore: number;
+  confidence: "High" | "Medium" | "Low";
+  warnings: string[];
+  assumptions: string[];
+  massItems: MassEstimate[];
+  batteries: BatteryEstimate[];
+  selectedImpact?: {
+    title: string;
+    points: string[];
+  };
+}
+
+const estimatedMassByType: Record<string, number> = {
+  "flight-controller": 42,
+  battery: 520,
+  camera: 45,
+  compass: 12,
+  esc: 35,
+  frame: 1350,
+  gimbal: 180,
+  gps: 28,
+  motor: 68,
+  "power-module": 26,
+  rangefinder: 18,
+  "telemetry-radio": 22
+};
+
+function finiteNumber(value: unknown, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function propertyNumber(node: DesignNode, key: string, fallback = 0) {
+  return finiteNumber(node.data.properties[key], fallback);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function estimateMass(node: DesignNode): MassEstimate {
+  const specMass = propertyNumber(node, "specMassG", 0);
+  if (specMass > 0) {
+    return {
+      nodeId: node.id,
+      label: node.data.label,
+      componentType: node.data.componentType,
+      massG: specMass,
+      source: "spec"
+    };
+  }
+
+  if (node.data.componentType === "frame") {
+    return {
+      nodeId: node.id,
+      label: node.data.label,
+      componentType: node.data.componentType,
+      massG: propertyNumber(node, "massKg", 1.35) * 1000,
+      source: "property"
+    };
+  }
+
+  if (node.data.componentType === "battery") {
+    const cells = propertyNumber(node, "cells", 4);
+    const capacityMah = propertyNumber(node, "capacityMah", 5200);
+    return {
+      nodeId: node.id,
+      label: node.data.label,
+      componentType: node.data.componentType,
+      massG: Math.max(80, cells * capacityMah * 0.024),
+      source: "estimated"
+    };
+  }
+
+  if (node.data.componentType === "camera") {
+    return {
+      nodeId: node.id,
+      label: node.data.label,
+      componentType: node.data.componentType,
+      massG: propertyNumber(node, "massG", estimatedMassByType.camera),
+      source: "property"
+    };
+  }
+
+  return {
+    nodeId: node.id,
+    label: node.data.label,
+    componentType: node.data.componentType,
+    massG: estimatedMassByType[node.data.componentType] ?? 30,
+    source: "estimated"
+  };
+}
+
+function estimateBattery(node: DesignNode): BatteryEstimate {
+  const cells = propertyNumber(node, "cells", 4);
+  const capacityAh = propertyNumber(node, "capacityMah", 5200) / 1000;
+  const nominalVoltage = cells * 3.7;
+  const energyWh = nominalVoltage * capacityAh;
+  const usableWh = energyWh * 0.8;
+  const maxCurrentA = capacityAh * propertyNumber(node, "cRating", 25);
+
+  return {
+    label: node.data.label,
+    cells,
+    capacityAh,
+    nominalVoltage,
+    energyWh,
+    usableWh,
+    maxCurrentA
+  };
+}
+
+function estimateMotorMaxPower(node: DesignNode) {
+  const thrustG = propertyNumber(node, "thrustGrams", 900);
+  const kv = propertyNumber(node, "kv", 900);
+  return Math.max(80, thrustG * (0.12 + clamp(kv, 400, 2400) / 20000));
+}
+
+function formatMetric(value: number, digits = 1, allowZero = false) {
+  if (!Number.isFinite(value) || value < 0 || (!allowZero && value === 0)) {
+    return "--";
+  }
+  return value.toFixed(digits);
+}
+
+function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, selectedNode?: DesignNode): PerformanceEstimate {
+  const massItems = nodes.map(estimateMass);
+  const totalMassG = massItems.reduce((sum, item) => sum + item.massG, 0);
+  const batteries = nodesByType(nodes, "battery").map(estimateBattery);
+  const batteryEnergyWh = batteries.reduce((sum, battery) => sum + battery.energyWh, 0);
+  const usableEnergyWh = batteries.reduce((sum, battery) => sum + battery.usableWh, 0);
+  const motors = nodesByType(nodes, "motor");
+  const totalThrustG = motors.reduce((sum, motor) => sum + propertyNumber(motor, "thrustGrams", 900), 0);
+  const totalMaxMotorPowerW = motors.reduce((sum, motor) => sum + estimateMotorMaxPower(motor), 0);
+  const totalMassKg = totalMassG / 1000;
+  const thrustToWeight = totalMassG > 0 ? totalThrustG / totalMassG : 0;
+  const hoverThrottle = totalThrustG > 0 ? clamp(totalMassG / totalThrustG, 0, 1.4) : 0;
+  const hoverPowerW =
+    motors.length > 0 && totalMaxMotorPowerW > 0
+      ? totalMaxMotorPowerW * Math.pow(clamp(hoverThrottle, 0.22, 1.15), 1.5) * 1.12
+      : 0;
+
+  const cruisePowerW =
+    settings.vehicle === "ArduPlane"
+      ? Math.max(80, totalMassKg * 65, totalMaxMotorPowerW * 0.28)
+      : settings.vehicle === "Rover"
+        ? Math.max(24, totalMassKg * 16)
+        : hoverPowerW * 0.88;
+  const hoverEnduranceMin = usableEnergyWh > 0 && hoverPowerW > 0 ? (usableEnergyWh / hoverPowerW) * 60 : 0;
+  const missionEnduranceMin = usableEnergyWh > 0 && cruisePowerW > 0 ? (usableEnergyWh / cruisePowerW) * 60 : 0;
+  const maxSpeedMps =
+    settings.vehicle === "ArduPlane"
+      ? clamp(16 + Math.max(thrustToWeight - 0.35, 0) * 14, 12, 34)
+      : settings.vehicle === "Rover"
+        ? clamp(3.5 + Math.max(thrustToWeight, 0) * 0.6, 2, 8)
+        : clamp(8 + Math.max(thrustToWeight - 1, 0) * 7, 5, 22);
+  const rangeKm = missionEnduranceMin > 0 ? (missionEnduranceMin / 60) * maxSpeedMps * 3.6 : 0;
+  const payloadMarginG =
+    settings.vehicle === "ArduPlane"
+      ? Math.max(0, totalThrustG * 0.75 - totalMassG)
+      : settings.vehicle === "Rover"
+        ? Math.max(0, totalMassG * 0.35)
+        : Math.max(0, totalThrustG / 2 - totalMassG);
+
+  const warnings: string[] = [];
+  if (nodes.length === 0) {
+    warnings.push("Add components before estimating vehicle performance.");
+  }
+  if (batteries.length === 0) {
+    warnings.push("Battery energy is missing, so endurance and range cannot be estimated.");
+  }
+  if (settings.vehicle !== "Rover" && motors.length === 0) {
+    warnings.push("Motor thrust is missing, so propulsion margin cannot be estimated.");
+  }
+  if (settings.vehicle !== "Rover" && thrustToWeight > 0 && thrustToWeight < 1.35) {
+    warnings.push("Thrust-to-weight is low for reliable takeoff and control authority.");
+  }
+  if (hoverThrottle > 0.75) {
+    warnings.push("Estimated hover throttle is high; endurance and control margin will be limited.");
+  }
+  if (nodesByType(nodes, "esc").length < motors.length) {
+    warnings.push("There are fewer ESCs than motors, so propulsion hardware is incomplete.");
+  }
+
+  const defaultMassCount = massItems.filter((item) => item.source === "estimated").length;
+  const assumptions = [
+    "Usable battery energy is estimated at 80% of nominal Wh.",
+    "Product spec Unit mass overrides catalog and property mass estimates.",
+    settings.vehicle === "ArduPlane"
+      ? "Plane cruise power is estimated from mass and installed motor power."
+      : settings.vehicle === "Rover"
+        ? "Rover range is estimated from mass, battery energy, and a low-speed drive model."
+        : "Multirotor endurance uses hover power; range uses an efficient forward-flight power estimate.",
+    defaultMassCount > 0
+      ? `${defaultMassCount} component mass value${defaultMassCount === 1 ? "" : "s"} used catalog estimates.`
+      : "All component masses came from specs or component properties."
+  ];
+
+  const confidence =
+    warnings.length === 0 && defaultMassCount <= Math.max(1, Math.round(nodes.length * 0.25))
+      ? "High"
+      : warnings.length <= 2 && defaultMassCount <= Math.max(2, Math.round(nodes.length * 0.5))
+        ? "Medium"
+        : "Low";
+  const performanceScore = clamp(
+    Math.round(
+      (thrustToWeight ? clamp(thrustToWeight / 2.4, 0, 1) * 34 : 0) +
+        (hoverEnduranceMin ? clamp(hoverEnduranceMin / 28, 0, 1) * 28 : 0) +
+        (rangeKm ? clamp(rangeKm / 10, 0, 1) * 20 : 0) +
+        (payloadMarginG ? clamp(payloadMarginG / Math.max(totalMassG * 0.25, 1), 0, 1) * 18 : 0)
+    ),
+    0,
+    100
+  );
+
+  const selectedMass = selectedNode ? massItems.find((item) => item.nodeId === selectedNode.id) : undefined;
+  const selectedImpact = selectedNode
+    ? {
+        title: `${selectedNode.data.label} impact`,
+        points: [
+          selectedMass
+            ? `${formatMetric(selectedMass.massG, 0)} g from ${selectedMass.source === "estimated" ? "AI mass estimate" : selectedMass.source}`
+            : "Mass contribution unavailable",
+          selectedNode.data.componentType === "battery"
+            ? `${formatMetric(estimateBattery(selectedNode).usableWh, 1)} Wh usable energy`
+            : selectedNode.data.componentType === "motor"
+              ? `${formatMetric(propertyNumber(selectedNode, "thrustGrams", 900), 0)} g max thrust per motor`
+              : `${formatMetric(((selectedMass?.massG ?? 0) / Math.max(totalMassG, 1)) * 100, 1)}% of estimated takeoff mass`,
+          selectedNode.data.componentType === "frame"
+            ? `Layout input: ${String(selectedNode.data.properties.layout ?? settings.frame)}`
+            : `Spec model: ${String(selectedNode.data.properties.specModel || selectedNode.data.properties.model || "not set")}`
+        ]
+      }
+    : undefined;
+
+  return {
+    totalMassG,
+    batteryEnergyWh,
+    usableEnergyWh,
+    totalThrustG,
+    thrustToWeight,
+    hoverThrottle,
+    hoverPowerW,
+    cruisePowerW,
+    hoverEnduranceMin,
+    missionEnduranceMin,
+    rangeKm,
+    maxSpeedMps,
+    payloadMarginG,
+    performanceScore,
+    confidence,
+    warnings,
+    assumptions,
+    massItems,
+    batteries,
+    selectedImpact
+  };
+}
+
+function motorSlotStyle(index: number, total: number) {
+  const angle = -Math.PI / 2 + (index / Math.max(total, 1)) * Math.PI * 2;
+  const radiusX = 41;
+  const radiusY = 34;
+  return {
+    left: `${50 + Math.cos(angle) * radiusX}%`,
+    top: `${50 + Math.sin(angle) * radiusY}%`
+  };
+}
+
+function SimulationPreview({
+  nodes,
+  settings,
+  score
+}: {
+  nodes: DesignNode[];
+  settings: SimulationSettings;
+  score: number;
+}) {
+  const motors = nodesByType(nodes, "motor");
+  const escs = nodesByType(nodes, "esc");
+  const frame = firstNodeByType(nodes, "frame");
+  const battery = firstNodeByType(nodes, "battery");
+  const gps = firstNodeByType(nodes, "gps");
+  const compass = firstNodeByType(nodes, "compass");
+  const rangefinder = firstNodeByType(nodes, "rangefinder");
+  const telemetry = firstNodeByType(nodes, "telemetry-radio");
+  const camera = firstNodeByType(nodes, "camera");
+  const gimbal = firstNodeByType(nodes, "gimbal");
+  const expectedMotors = expectedMotorCount(settings);
+  const slotCount = settings.vehicle === "Rover" ? Math.max(motors.length, 4) : Math.max(motors.length, expectedMotors, 1);
+  const frameLayout = String(frame?.data.properties.layout ?? settings.frame);
+  const batteryCells = battery?.data.properties.cells;
+  const payloads = [camera, gimbal].filter(Boolean);
+
+  return (
+    <section className="sim-preview">
+      <div className="sim-preview-title">
+        <span>Vehicle Preview</span>
+        <strong>{settings.vehicle}</strong>
+      </div>
+
+      <div className={`vehicle-visual ${settings.vehicle.toLowerCase()}`}>
+        <div className="vehicle-axis horizontal" />
+        <div className="vehicle-axis vertical" />
+        <div className="vehicle-axis diagonal-a" />
+        <div className="vehicle-axis diagonal-b" />
+
+        {Array.from({ length: slotCount }).map((_, index) => {
+          const motor = motors[index];
+          return (
+            <span
+              className={`motor-visual ${motor ? "active" : "missing"}`}
+              key={`motor-slot-${index}`}
+              style={motorSlotStyle(index, slotCount)}
+              title={motor?.data.label ?? `Motor ${index + 1} missing`}
+            >
+              {index + 1}
+            </span>
+          );
+        })}
+
+        <div className="fc-visual" title="Flight controller">
+          <Cpu size={15} />
+          <span>FC</span>
+        </div>
+
+        {battery ? (
+          <div className="battery-visual" title={battery.data.label}>
+            <Battery size={16} />
+            <span>{batteryCells ? `${batteryCells}S` : "BAT"}</span>
+          </div>
+        ) : null}
+
+        {gps ? <span className="sensor-visual gps">GPS</span> : null}
+        {compass ? <span className="sensor-visual compass">MAG</span> : null}
+        {rangefinder ? <span className="sensor-visual rangefinder">RNG</span> : null}
+        {telemetry ? <span className="sensor-visual telemetry">TEL</span> : null}
+        {payloads.length > 0 ? <span className="payload-visual">PAY</span> : null}
+      </div>
+
+      <div className="sim-metrics">
+        <div>
+          <strong>{frameLayout}</strong>
+          <span>Frame</span>
+        </div>
+        <div>
+          <strong>
+            {motors.length}/{expectedMotors || motors.length}
+          </strong>
+          <span>Motors</span>
+        </div>
+        <div>
+          <strong>{escs.length}</strong>
+          <span>ESCs</span>
+        </div>
+        <div>
+          <strong>{score}</strong>
+          <span>Score</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PerformancePanel({ estimate }: { estimate: PerformanceEstimate }) {
+  const metrics = [
+    { label: "Takeoff Mass", value: formatMetric(estimate.totalMassG / 1000, 2), unit: "kg" },
+    { label: "Hover Endurance", value: formatMetric(estimate.hoverEnduranceMin, 1), unit: "min" },
+    { label: "Mission Range", value: formatMetric(estimate.rangeKm, 2), unit: "km" },
+    { label: "Usable Energy", value: formatMetric(estimate.usableEnergyWh, 1), unit: "Wh" },
+    { label: "Thrust / Weight", value: formatMetric(estimate.thrustToWeight, 2), unit: "x" },
+    { label: "Hover Throttle", value: estimate.hoverThrottle > 0 ? `${Math.round(estimate.hoverThrottle * 100)}` : "--", unit: "%" },
+    { label: "Max Speed", value: formatMetric(estimate.maxSpeedMps, 1), unit: "m/s" },
+    { label: "Payload Margin", value: formatMetric(estimate.payloadMarginG, 0, true), unit: "g" }
+  ];
+
+  return (
+    <div className="detail-content">
+      <div className="panel-title">
+        <span>AI Performance</span>
+        <span className={`status-pill ${estimate.confidence === "High" ? "good" : estimate.confidence === "Low" ? "bad" : "neutral"}`}>
+          {estimate.confidence}
+        </span>
+      </div>
+
+      <section className="ai-score-panel">
+        <div>
+          <small>Performance Score</small>
+          <strong>{estimate.performanceScore}</strong>
+        </div>
+        <p>Calculated from the selected components, object properties, and product specs in this workspace.</p>
+      </section>
+
+      <div className="ai-metric-grid">
+        {metrics.map((metric) => (
+          <div className="ai-metric-card" key={metric.label}>
+            <span>{metric.label}</span>
+            <strong>
+              {metric.value}
+              <small>{metric.unit}</small>
+            </strong>
+          </div>
+        ))}
+      </div>
+
+      {estimate.selectedImpact ? (
+        <section className="selected-impact">
+          <h2>Selected Object</h2>
+          <strong>{estimate.selectedImpact.title}</strong>
+          {estimate.selectedImpact.points.map((point) => (
+            <p key={point}>{point}</p>
+          ))}
+        </section>
+      ) : (
+        <div className="empty-state">Select an object to see its AI impact.</div>
+      )}
+
+      <section className="ai-detail-list">
+        <h2>Power Model</h2>
+        <div className="ai-detail-row">
+          <span>Battery packs</span>
+          <strong>{estimate.batteries.length}</strong>
+        </div>
+        <div className="ai-detail-row">
+          <span>Nominal energy</span>
+          <strong>{formatMetric(estimate.batteryEnergyWh, 1)} Wh</strong>
+        </div>
+        <div className="ai-detail-row">
+          <span>Hover power</span>
+          <strong>{formatMetric(estimate.hoverPowerW, 0)} W</strong>
+        </div>
+        <div className="ai-detail-row">
+          <span>Cruise power</span>
+          <strong>{formatMetric(estimate.cruisePowerW, 0)} W</strong>
+        </div>
+      </section>
+
+      <section className="ai-detail-list">
+        <h2>AI Notes</h2>
+        {estimate.warnings.length > 0
+          ? estimate.warnings.map((warning) => (
+              <p className="ai-warning" key={warning}>
+                {warning}
+              </p>
+            ))
+          : null}
+        {estimate.assumptions.map((assumption) => (
+          <p key={assumption}>{assumption}</p>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function App() {
+  const { fitView } = useReactFlow<DesignNode, DesignEdge>();
+  const starterDesign = useMemo(() => createStarterDesign(), []);
+  const [designId, setDesignId] = useState<string | undefined>(starterDesign.id);
+  const [designName, setDesignName] = useState(starterDesign.name);
+  const [nodes, setNodes] = useState<DesignNode[]>(starterDesign.nodes);
+  const [edges, setEdges] = useState<DesignEdge[]>(starterDesign.edges);
+  const [settings, setSettings] = useState<SimulationSettings>(starterDesign.settings);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("fc-1");
+  const [tab, setTab] = useState<AppTab>("inspector");
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [statusMessage, setStatusMessage] = useState("Ready");
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [sitlPlan, setSitlPlan] = useState<SitlPlan | null>(null);
+  const workspaceFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    getSystemStatus()
+      .then(setSystemStatus)
+      .catch((error: Error) => setStatusMessage(error.message));
+  }, []);
+
+  const validation = useMemo(() => validateDesign(nodes, edges, settings), [nodes, edges, settings]);
+
+  const editNode = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((candidate) => candidate.id === nodeId);
+      setNodes((currentNodes) => currentNodes.map((candidate): DesignNode => ({ ...candidate, selected: candidate.id === nodeId })));
+      setSelectedNodeId(nodeId);
+      setTab("inspector");
+      setStatusMessage(node ? `${node.data.label} selected` : "Component selected");
+    },
+    [nodes]
+  );
+
+  const nodeIssueMap = useMemo(() => {
+    const map = new Map<string, "error" | "warning" | "ok">();
+    for (const node of nodes) {
+      map.set(node.id, "ok");
+    }
+    for (const issue of validation.issues) {
+      for (const nodeId of issue.nodeIds ?? []) {
+        const current = map.get(nodeId);
+        if (issue.severity === "error") {
+          map.set(nodeId, "error");
+        } else if (issue.severity === "warning" && current !== "error") {
+          map.set(nodeId, "warning");
+        }
+      }
+    }
+    return map;
+  }, [nodes, validation.issues]);
+
+  const visibleNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          health: nodeIssueMap.get(node.id) ?? "ok",
+          onEdit: () => editNode(node.id)
+        }
+      })),
+    [editNode, nodeIssueMap, nodes]
+  );
+
+  const edgeIssueMap = useMemo(() => {
+    const map = new Map<string, "error" | "warning">();
+    for (const issue of validation.issues) {
+      for (const edgeId of issue.edgeIds ?? []) {
+        if (issue.severity === "error") {
+          map.set(edgeId, "error");
+        } else if (!map.has(edgeId)) {
+          map.set(edgeId, "warning");
+        }
+      }
+    }
+    return map;
+  }, [validation.issues]);
+
+  const visibleEdges = useMemo(
+    () =>
+      edges.map((edge) => {
+        const signal = signalForEdge(edge, nodes);
+        const issue = edgeIssueMap.get(edge.id);
+        const color = issue === "error" ? "#c83f3f" : issue === "warning" ? "#c56b21" : signal ? signalColors[signal] : "#8ca0a5";
+        return {
+          ...edge,
+          data: { ...edge.data, signal },
+          markerEnd: { type: MarkerType.ArrowClosed, color },
+          style: { ...edge.style, stroke: color },
+          className: [signal ? `edge-signal-${signal}` : undefined, issue ? `edge-${issue}` : undefined].filter(Boolean).join(" ") || undefined
+        };
+      }),
+    [edgeIssueMap, edges, nodes]
+  );
+
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const selectedDefinition = selectedNode ? getComponentDefinition(selectedNode.data.componentType) : null;
+  const gcsTargets = useMemo(() => targetDefaults(settings), [settings]);
+  const buildGuide = useMemo(() => buildGuideFor(nodes, settings), [nodes, settings]);
+  const performanceEstimate = useMemo(() => analyzePerformance(nodes, settings, selectedNode), [nodes, selectedNode, settings]);
+
+  const filteredCatalog = useMemo(() => {
+    const query = catalogQuery.trim().toLowerCase();
+    if (!query) {
+      return componentCatalog;
+    }
+    return componentCatalog.filter(
+      (component) =>
+        component.name.toLowerCase().includes(query) ||
+        component.category.toLowerCase().includes(query) ||
+        component.summary.toLowerCase().includes(query)
+    );
+  }, [catalogQuery]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<DesignNode>[]) => {
+      const removedNodeIds: string[] = [];
+
+      for (const change of changes) {
+        if (change.type === "select" && change.selected) {
+          setSelectedNodeId(change.id);
+        }
+        if (change.type === "remove") {
+          removedNodeIds.push(change.id);
+        }
+      }
+
+      setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
+
+      if (removedNodeIds.length > 0) {
+        const removed = new Set(removedNodeIds);
+        setEdges((currentEdges) => currentEdges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target)));
+        setSelectedNodeId((currentSelectedId) => (currentSelectedId && removed.has(currentSelectedId) ? null : currentSelectedId));
+      }
+    },
+    [setEdges, setNodes]
+  );
+
+  const onEdgesChange = useCallback((changes: EdgeChange<DesignEdge>[]) => {
+    setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
+  }, []);
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
+        return;
+      }
+
+      const candidate: DesignEdge = {
+        ...connection,
+        id: `edge-${crypto.randomUUID()}`,
+        type: "smoothstep",
+        markerEnd: { type: MarkerType.ArrowClosed },
+        data: {
+          signal: signalForEdge(connection as DesignEdge, nodes)
+        }
+      };
+      const nextValidation = validateDesign(nodes, [...edges, candidate], settings);
+      const blocking = nextValidation.issues.find(
+        (issue) => issue.severity === "error" && issue.edgeIds?.includes(candidate.id)
+      );
+
+      if (blocking) {
+        setStatusMessage(blocking.message);
+        return;
+      }
+
+      setEdges((currentEdges) => addEdge(candidate, currentEdges));
+      setStatusMessage("Connection added");
+    },
+    [edges, nodes, settings]
+  );
+
+  const addComponent = (definition: ComponentDefinition) => {
+    const node: DesignNode = {
+      ...createComponentNode(definition.type, nodes.length),
+      position: findOpenNodePosition(nodes, definition.type),
+      selected: true
+    };
+    setNodes((currentNodes) => [...currentNodes.map((currentNode): DesignNode => ({ ...currentNode, selected: false })), node]);
+    setSelectedNodeId(node.id);
+    setTab("inspector");
+    setStatusMessage(`${definition.name} added`);
+    window.setTimeout(() => {
+      void fitView({ nodes: [{ id: node.id }], duration: 450, padding: 0.75, maxZoom: 1.05 });
+    }, 50);
+  };
+
+  const addGuideComponent = () => {
+    if (!buildGuide.next) {
+      setStatusMessage("Guided sequence complete");
+      return;
+    }
+    addComponent(buildGuide.next.definition);
+  };
+
+  const updateSelectedProperty = (key: string, value: string | number | boolean) => {
+    if (!selectedNode) {
+      return;
+    }
+
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.id === selectedNode.id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                properties: {
+                  ...node.data.properties,
+                  [key]: value
+                }
+              }
+            }
+          : node
+      )
+    );
+  };
+
+  const updateSelectedLabel = (label: string) => {
+    if (!selectedNode) {
+      return;
+    }
+
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.id === selectedNode.id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                label
+              }
+            }
+          : node
+      )
+    );
+  };
+
+  const updateSelectedPosition = (axis: "x" | "y", value: number) => {
+    if (!selectedNode || Number.isNaN(value)) {
+      return;
+    }
+
+    setNodes((currentNodes) =>
+      currentNodes.map((node) =>
+        node.id === selectedNode.id
+          ? {
+              ...node,
+              position: {
+                ...node.position,
+                [axis]: value
+              }
+            }
+          : node
+      )
+    );
+  };
+
+  const focusSelectedNode = () => {
+    if (!selectedNode) {
+      return;
+    }
+
+    void fitView({ nodes: [{ id: selectedNode.id }], duration: 350, padding: 0.75, maxZoom: 1.05 });
+    setStatusMessage(`${selectedNode.data.label} centered`);
+  };
+
+  const duplicateSelectedNode = () => {
+    if (!selectedNode) {
+      return;
+    }
+
+    const duplicate: DesignNode = {
+      id: `${selectedNode.data.componentType}-${crypto.randomUUID()}`,
+      type: "componentNode",
+      position: findOpenNodePosition(nodes, selectedNode.data.componentType, {
+        x: selectedNode.position.x + NODE_CARD_WIDTH + NODE_PLACEMENT_GAP,
+        y: selectedNode.position.y
+      }),
+      data: {
+        componentType: selectedNode.data.componentType,
+        label: `${selectedNode.data.label} copy`,
+        properties: { ...selectedNode.data.properties }
+      },
+      selected: true
+    };
+
+    setNodes((currentNodes) => [...currentNodes.map((node): DesignNode => ({ ...node, selected: false })), duplicate]);
+    setSelectedNodeId(duplicate.id);
+    setTab("inspector");
+    setStatusMessage("Component duplicated");
+    window.setTimeout(() => {
+      void fitView({ nodes: [{ id: duplicate.id }], duration: 350, padding: 0.75, maxZoom: 1.05 });
+    }, 50);
+  };
+
+  const removeSelectedNode = () => {
+    if (!selectedNode) {
+      return;
+    }
+    setNodes((currentNodes) => currentNodes.filter((node) => node.id !== selectedNode.id));
+    setEdges((currentEdges) => currentEdges.filter((edge) => edge.source !== selectedNode.id && edge.target !== selectedNode.id));
+    setSelectedNodeId(null);
+    setStatusMessage("Component removed");
+  };
+
+  const currentDesign = () => designFromState(designName, nodes, edges, settings, designId);
+
+  const applyWorkspaceDesign = (design: UavDesign, message: string) => {
+    setDesignId(design.id);
+    setDesignName(design.name);
+    setNodes(design.nodes.map((node): DesignNode => ({ ...node, selected: false })));
+    setEdges(design.edges);
+    setSettings(settingsWithDefaults(design.settings));
+    setSelectedNodeId(design.nodes[0]?.id ?? null);
+    setTab("inspector");
+    setSitlPlan(null);
+    setStatusMessage(message);
+    if (design.nodes.length > 0) {
+      window.setTimeout(() => {
+        void fitView({ duration: 450, padding: 0.22, maxZoom: 1.05 });
+      }, 50);
+    }
+  };
+
+  const confirmWorkspaceReplace = (action: string) => {
+    if (nodes.length === 0 && edges.length === 0) {
+      return true;
+    }
+    return window.confirm(`${action} will replace the current workspace. Save a .saq file first if you need to keep it.`);
+  };
+
+  const handleNewSpace = () => {
+    if (!confirmWorkspaceReplace("Create New Space")) {
+      return;
+    }
+
+    applyWorkspaceDesign(
+      {
+        name: "Untitled Space",
+        nodes: [],
+        edges: [],
+        settings: settingsWithDefaults()
+      },
+      "New empty workspace created"
+    );
+  };
+
+  const handleResetWorkspace = () => {
+    if (!confirmWorkspaceReplace("Reset Workspace")) {
+      return;
+    }
+
+    applyWorkspaceDesign(createStarterDesign(), "Workspace reset to starter design");
+  };
+
+  const handleSaveWorkspaceFile = () => {
+    const workspaceFile = saqWorkspaceFor(currentDesign());
+    downloadText(`${safeFileName(designName)}.saq`, JSON.stringify(workspaceFile, null, 2), "application/vnd.ardupilot-uav-lab.saq+json");
+    setStatusMessage("Workspace saved as .saq");
+  };
+
+  const handleLoadWorkspaceClick = () => {
+    workspaceFileInputRef.current?.click();
+  };
+
+  const handleWorkspaceFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(await file.text());
+      const loadedDesign = normalizeDesignPayload(payload, file.name.replace(/\.saq$/i, ""));
+      applyWorkspaceDesign(loadedDesign, `${file.name} loaded`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not load the selected workspace file");
+    }
+  };
+
+  const handleSave = async () => {
+    const result = await saveDesign(currentDesign());
+    setDesignId(result.design.id);
+    setStatusMessage("Design saved");
+  };
+
+  const handleJsonDownload = () => {
+    downloadText(`${designName.replace(/\s+/g, "-").toLowerCase()}.uav.json`, JSON.stringify(currentDesign(), null, 2), "application/json");
+    setStatusMessage("Design JSON exported");
+  };
+
+  const handleParamsDownload = async () => {
+    const result = await buildParamFile(currentDesign());
+    downloadText(result.fileName, result.content, "text/plain");
+    setStatusMessage("ArduPilot parameter file exported");
+  };
+
+  const handleLocateSimVehicle = async () => {
+    const result = await locateSimVehicle(settings.simVehiclePath);
+    setSystemStatus(result);
+    setStatusMessage(result.sitl.available ? `Found sim_vehicle.py at ${result.sitl.path}` : result.sitl.notes[0] ?? "sim_vehicle.py not found");
+  };
+
+  const handlePlan = async () => {
+    const result = await buildSitlPlan(currentDesign());
+    setSitlPlan(result.plan);
+    setStatusMessage("SITL plan ready");
+  };
+
+  const handleLaunch = async () => {
+    const result = await launchSitl(currentDesign());
+    setSitlPlan(result.plan);
+    setStatusMessage(`SITL launched as PID ${result.pid}`);
+  };
+
+  const groupedCatalog = useMemo(() => {
+    return filteredCatalog.reduce<Record<string, ComponentDefinition[]>>((groups, component) => {
+      groups[component.category] ??= [];
+      groups[component.category].push(component);
+      return groups;
+    }, {});
+  }, [filteredCatalog]);
+
+  const updateGcsTarget = <K extends keyof GcsTargetSettings>(id: GcsTargetSettings["id"], key: K, value: GcsTargetSettings[K]) => {
+    setSettings((currentSettings) => {
+      const targets = targetDefaults(currentSettings).map((target) => (target.id === id ? { ...target, [key]: value } : target));
+      const qgc = targets.find((target) => target.id === "qgc");
+      return {
+        ...currentSettings,
+        gcsTargets: targets,
+        gcsHost: qgc?.host ?? currentSettings.gcsHost,
+        gcsPort: qgc?.port ?? currentSettings.gcsPort
+      };
+    });
+  };
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <PlugZap size={24} />
+          <div>
+            <h1>ArduPilot UAV Lab</h1>
+            <input value={designName} onChange={(event) => setDesignName(event.target.value)} aria-label="Design name" />
+            <small className="brand-credit">Design by UAS Doctoral Tech</small>
+          </div>
+        </div>
+
+        <div className="health-strip">
+          <div className="health-score">
+            <span>{validation.score}</span>
+            <small>Score</small>
+          </div>
+          <div className="health-count error">{validation.counts.error} Errors</div>
+          <div className="health-count warning">{validation.counts.warning} Warnings</div>
+          <div className="health-count info">{validation.counts.info} Notes</div>
+        </div>
+
+        <div className="top-actions">
+          <button type="button" title="Save" onClick={handleSave}>
+            <Save size={17} />
+            <span>Save</span>
+          </button>
+          <button type="button" title="Export JSON" onClick={handleJsonDownload}>
+            <FileJson size={17} />
+            <span>JSON</span>
+          </button>
+          <button type="button" title="Export parameters" onClick={handleParamsDownload}>
+            <Download size={17} />
+            <span>Params</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="workspace">
+        <aside className="catalog-panel">
+          <div className="panel-title">
+            <Boxes size={18} />
+            <span>Catalog</span>
+          </div>
+          <label className="search-box">
+            <Search size={16} />
+            <input value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="Search" />
+          </label>
+
+          <section className="build-guide" aria-label="Build guide">
+            <div className="build-guide-header">
+              <span>Build Guide</span>
+              <strong>
+                {buildGuide.completedRequired}/{buildGuide.requiredTotal}
+              </strong>
+            </div>
+            <div className="guide-start">
+              <small>Start</small>
+              <strong>{buildGuide.start.definition.name}</strong>
+              <span>{buildGuide.start.placement}</span>
+            </div>
+            <div className={`guide-next ${buildGuide.next ? "" : "complete"}`}>
+              <small>Next</small>
+              <strong>{buildGuide.next ? buildGuide.next.definition.name : "Guided sequence complete"}</strong>
+              <span>{buildGuide.next ? buildGuide.next.placement : "Add optional payloads manually or tune product specs."}</span>
+            </div>
+            <button className="guide-action" type="button" onClick={addGuideComponent} disabled={!buildGuide.next}>
+              {buildGuide.next ? <Plus size={15} /> : <CheckCircle2 size={15} />}
+              <span>{buildGuide.next ? `Add ${buildGuide.next.definition.name}` : "Complete"}</span>
+            </button>
+            <div className="guide-step-list">
+              {buildGuide.items.map((item) => (
+                <div
+                  className={`guide-step ${item.complete ? "done" : ""} ${buildGuide.next?.componentType === item.componentType ? "active" : ""}`}
+                  key={item.componentType}
+                >
+                  <span>{item.definition.name}</span>
+                  <small>
+                    {item.targetCount === 0 ? "Skip" : `${item.count}/${item.targetCount}`}
+                    {item.optional ? " optional" : ""}
+                  </small>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <div className="catalog-list">
+            {Object.entries(groupedCatalog).map(([category, components]) => (
+              <section key={category} className="catalog-group">
+                <h2>{category}</h2>
+                {components.map((component) => {
+                  const Icon = iconMap[component.icon as keyof typeof iconMap] ?? Boxes;
+                  return (
+                    <button className="catalog-item" type="button" key={component.type} onClick={() => addComponent(component)}>
+                      <Icon size={18} />
+                      <span>
+                        <strong>{component.name}</strong>
+                        <small>{component.summary}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </section>
+            ))}
+          </div>
+        </aside>
+
+        <section className="canvas-panel">
+          <ReactFlow
+            nodes={visibleNodes}
+            edges={visibleEdges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={(_, node) => {
+              setSelectedNodeId(node.id);
+              setTab("inspector");
+            }}
+            fitView
+            minZoom={0.25}
+            maxZoom={1.6}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
+            <Controls showInteractive={false} />
+            <MiniMap pannable zoomable nodeStrokeWidth={3} />
+            <Panel position="top-left" className="flow-panel">
+              <GitBranch size={16} />
+              <span>{nodes.length} components</span>
+              <span>{edges.length} links</span>
+            </Panel>
+            <Panel position="top-right" className="workspace-panel">
+              <button type="button" title="Create new empty space" onClick={handleNewSpace}>
+                <FilePlus size={15} />
+                <span>New</span>
+              </button>
+              <button type="button" title="Reset workspace to starter design" onClick={handleResetWorkspace}>
+                <RotateCcw size={15} />
+                <span>Reset</span>
+              </button>
+              <button type="button" title="Save current space as .saq" onClick={handleSaveWorkspaceFile}>
+                <Save size={15} />
+                <span>Save .saq</span>
+              </button>
+              <button type="button" title="Load a .saq workspace" onClick={handleLoadWorkspaceClick}>
+                <FolderOpen size={15} />
+                <span>Load</span>
+              </button>
+              <input
+                ref={workspaceFileInputRef}
+                className="workspace-file-input"
+                type="file"
+                accept=".saq,application/json"
+                onChange={handleWorkspaceFileSelected}
+              />
+            </Panel>
+          </ReactFlow>
+        </section>
+
+        <aside className="detail-panel">
+          <div className="tabbar">
+            <button className={tab === "inspector" ? "active" : ""} type="button" onClick={() => setTab("inspector")}>
+              <Settings size={16} />
+              <span>Inspect</span>
+            </button>
+            <button className={tab === "validation" ? "active" : ""} type="button" onClick={() => setTab("validation")}>
+              <AlertTriangle size={16} />
+              <span>Validate</span>
+            </button>
+            <button className={tab === "simulation" ? "active" : ""} type="button" onClick={() => setTab("simulation")}>
+              <Play size={16} />
+              <span>SITL</span>
+            </button>
+            <button className={tab === "performance" ? "active" : ""} type="button" onClick={() => setTab("performance")}>
+              <Sparkles size={16} />
+              <span>AI</span>
+            </button>
+          </div>
+
+          <section className="connection-legend">
+            <h2>Connections</h2>
+            <div>
+              {SIGNAL_KINDS.map((signal) => (
+                <span className="legend-item" key={signal}>
+                  <span className={`legend-swatch ${signal}`} />
+                  {signalLabel(signal)}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          {tab === "inspector" && (
+            <div className="detail-content">
+              {selectedNode && selectedDefinition ? (
+                <>
+                  <div className="panel-title">
+                    <span>{selectedDefinition.name}</span>
+                    <button className="icon-button danger" type="button" title="Remove component" onClick={removeSelectedNode}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+
+                  <label className="field">
+                    <span>Name</span>
+                    <input value={selectedNode.data.label} onChange={(event) => updateSelectedLabel(event.target.value)} />
+                  </label>
+
+                  <section className="object-editor">
+                    <h2>Object</h2>
+                    <div className="position-grid">
+                      <label className="field">
+                        <span>X</span>
+                        <input
+                          type="number"
+                          step={10}
+                          value={Math.round(selectedNode.position.x)}
+                          onChange={(event) => updateSelectedPosition("x", Number(event.target.value))}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Y</span>
+                        <input
+                          type="number"
+                          step={10}
+                          value={Math.round(selectedNode.position.y)}
+                          onChange={(event) => updateSelectedPosition("y", Number(event.target.value))}
+                        />
+                      </label>
+                    </div>
+                    <div className="object-action-row">
+                      <button className="icon-button" type="button" title="Center object" onClick={focusSelectedNode}>
+                        <Search size={16} />
+                      </button>
+                      <button className="icon-button" type="button" title="Duplicate object" onClick={duplicateSelectedNode}>
+                        <Copy size={16} />
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="product-spec-editor">
+                    <h2>Product Spec</h2>
+                    {productSpecProperties.map((property) => (
+                      <label className="field" key={property.key}>
+                        <span>
+                          {property.label}
+                          {property.unit ? <small>{property.unit}</small> : null}
+                        </span>
+                        {propertyInput(property, selectedNode.data.properties[property.key] ?? property.defaultValue, (value) =>
+                          updateSelectedProperty(property.key, value)
+                        )}
+                      </label>
+                    ))}
+                  </section>
+
+                  {selectedDefinition.properties.map((property) => (
+                    <label className="field" key={property.key}>
+                      <span>
+                        {property.label}
+                        {property.unit ? <small>{property.unit}</small> : null}
+                      </span>
+                      {propertyInput(property, selectedNode.data.properties[property.key] ?? property.defaultValue, (value) =>
+                        updateSelectedProperty(property.key, value)
+                      )}
+                    </label>
+                  ))}
+
+                  <section className="ports-list">
+                    <h2>Ports</h2>
+                    {selectedDefinition.ports.map((port) => (
+                      <div className="port-row" key={port.id}>
+                        <span className={`port-dot ${port.kind}`} />
+                        <span>{port.label}</span>
+                        <small>{port.direction}</small>
+                      </div>
+                    ))}
+                  </section>
+                </>
+              ) : (
+                <div className="empty-state">Select a component</div>
+              )}
+            </div>
+          )}
+
+          {tab === "validation" && (
+            <div className="detail-content">
+              <div className="panel-title">
+                <span>Validation</span>
+                <span className={`status-pill ${validation.counts.error ? "bad" : "good"}`}>
+                  {validation.counts.error ? "Blocked" : "Ready"}
+                </span>
+              </div>
+              <div className="issue-list">
+                {validation.issues.length === 0 ? (
+                  <div className="empty-state">No issues</div>
+                ) : (
+                  validation.issues.map((issue) => (
+                    <button
+                      type="button"
+                      className={`issue ${issue.severity}`}
+                      key={issue.id}
+                      onClick={() => {
+                        if (issue.nodeIds?.[0]) {
+                          setSelectedNodeId(issue.nodeIds[0]);
+                          setTab("inspector");
+                        }
+                      }}
+                    >
+                      <strong>{issue.title}</strong>
+                      <span>{issue.message}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {tab === "simulation" && (
+            <div className="detail-content">
+              <div className="panel-title">
+                <span>Simulation</span>
+                <span className={`status-pill ${systemStatus?.sitl.available ? "good" : "neutral"}`}>
+                  {systemStatus?.sitl.available ? "SITL found" : "SITL not found"}
+                </span>
+              </div>
+
+              <SimulationPreview nodes={nodes} settings={settings} score={validation.score} />
+
+              <label className="field">
+                <span>Vehicle</span>
+                <select value={settings.vehicle} onChange={(event) => setSettings({ ...settings, vehicle: event.target.value as SimulationSettings["vehicle"] })}>
+                  <option value="ArduCopter">ArduCopter</option>
+                  <option value="ArduPlane">ArduPlane</option>
+                  <option value="Rover">Rover</option>
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Frame</span>
+                <input value={settings.frame} onChange={(event) => setSettings({ ...settings, frame: event.target.value })} />
+              </label>
+
+              <label className="field">
+                <span>Physics</span>
+                <select
+                  value={settings.physicsBackend}
+                  onChange={(event) => setSettings({ ...settings, physicsBackend: event.target.value as SimulationSettings["physicsBackend"] })}
+                >
+                  <option value="sitl">SITL frame</option>
+                  <option value="json">JSON backend</option>
+                </select>
+              </label>
+
+              {settings.physicsBackend === "json" ? (
+                <label className="field">
+                  <span>JSON host</span>
+                  <input value={settings.jsonHost} onChange={(event) => setSettings({ ...settings, jsonHost: event.target.value })} />
+                </label>
+              ) : null}
+
+              <section className="sitl-locator">
+                <h2>sim_vehicle.py</h2>
+                <div className="path-row">
+                  <input
+                    value={settings.simVehiclePath}
+                    onChange={(event) => setSettings({ ...settings, simVehiclePath: event.target.value })}
+                    placeholder="File path or ArduPilot checkout folder"
+                  />
+                  <button type="button" title="Check path" onClick={handleLocateSimVehicle}>
+                    <Search size={16} />
+                  </button>
+                </div>
+                <p>{systemStatus?.sitl.path ?? systemStatus?.sitl.notes[0] ?? "Enter a path or use ARDUPILOT_HOME/PATH detection."}</p>
+              </section>
+
+              <label className="field">
+                <span>Location</span>
+                <input value={settings.locationName} onChange={(event) => setSettings({ ...settings, locationName: event.target.value })} />
+              </label>
+
+              <label className="field">
+                <span>Speedup</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={settings.speedup}
+                  onChange={(event) => setSettings({ ...settings, speedup: Number(event.target.value) })}
+                />
+              </label>
+
+              <section className="gcs-targets">
+                <h2>Ground Stations</h2>
+                {gcsTargets.map((target) => (
+                  <div className="gcs-target-card" key={target.id}>
+                    <label className="toggle-row">
+                      <input
+                        type="checkbox"
+                        checked={target.enabled}
+                        onChange={(event) => updateGcsTarget(target.id, "enabled", event.target.checked)}
+                      />
+                      <span>{target.name}</span>
+                    </label>
+                    <div className="gcs-target-grid">
+                      <label className="field">
+                        <span>Host</span>
+                        <input value={target.host} onChange={(event) => updateGcsTarget(target.id, "host", event.target.value)} />
+                      </label>
+                      <label className="field">
+                        <span>Port</span>
+                        <input type="number" value={target.port} onChange={(event) => updateGcsTarget(target.id, "port", Number(event.target.value))} />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </section>
+
+              <div className="action-grid">
+                <button type="button" onClick={handlePlan}>
+                  <GitBranch size={16} />
+                  <span>Plan</span>
+                </button>
+                <button type="button" onClick={handleLaunch} disabled={!systemStatus?.sitl.available || validation.counts.error > 0}>
+                  <Play size={16} />
+                  <span>Launch</span>
+                </button>
+              </div>
+
+              {sitlPlan ? (
+                <section className="command-box">
+                  <h2>Command</h2>
+                  <code>{sitlPlan.commandLine}</code>
+                  {sitlPlan.notes.map((note) => (
+                    <p key={note}>{note}</p>
+                  ))}
+                </section>
+              ) : null}
+            </div>
+          )}
+
+          {tab === "performance" && <PerformancePanel estimate={performanceEstimate} />}
+        </aside>
+      </main>
+
+      <footer className="statusbar">
+        <span>{statusMessage}</span>
+        <span>{systemStatus?.sitl.notes[0] ?? "SITL detection pending"}</span>
+      </footer>
+    </div>
+  );
+}
+
+export default App;

@@ -1,0 +1,101 @@
+import type { Edge, Node } from "@xyflow/react";
+
+export type SignalKind =
+  | "power"
+  | "pwm"
+  | "uart"
+  | "i2c"
+  | "can"
+  | "analog"
+  | "video"
+  | "mount"
+  | "telemetry";
+
+export type PortDirection = "input" | "output";
+
+export type GcsTargetId = "qgc" | "mission-planner";
+
+export interface ComponentPort {
+  id: string;
+  label: string;
+  kind: SignalKind;
+  direction: PortDirection;
+  required?: boolean;
+}
+
+export interface ComponentPropertyDefinition {
+  key: string;
+  label: string;
+  type: "text" | "number" | "select" | "boolean";
+  defaultValue: string | number | boolean;
+  unit?: string;
+  min?: number;
+  max?: number;
+  options?: string[];
+}
+
+export interface ComponentDefinition {
+  type: string;
+  name: string;
+  category: "Core" | "Power" | "Propulsion" | "Sensors" | "Comms" | "Payload";
+  summary: string;
+  icon: string;
+  ports: ComponentPort[];
+  properties: ComponentPropertyDefinition[];
+}
+
+export interface ComponentNodeData extends Record<string, unknown> {
+  componentType: string;
+  label: string;
+  properties: Record<string, string | number | boolean>;
+  health?: "ok" | "warning" | "error";
+}
+
+export type DesignNode = Node<ComponentNodeData, "componentNode">;
+export type DesignEdge = Edge<{ signal?: SignalKind; issues?: string[] }>;
+
+export interface GcsTargetSettings {
+  id: GcsTargetId;
+  name: string;
+  enabled: boolean;
+  host: string;
+  port: number;
+}
+
+export interface SimulationSettings {
+  vehicle: "ArduCopter" | "ArduPlane" | "Rover";
+  frame: string;
+  physicsBackend: "sitl" | "json";
+  jsonHost: string;
+  simVehiclePath: string;
+  speedup: number;
+  locationName: string;
+  gcsHost: string;
+  gcsPort: number;
+  gcsTargets: GcsTargetSettings[];
+}
+
+export interface UavDesign {
+  id?: string;
+  name: string;
+  nodes: DesignNode[];
+  edges: DesignEdge[];
+  settings: SimulationSettings;
+  updatedAt?: string;
+}
+
+export const defaultSettings: SimulationSettings = {
+  vehicle: "ArduCopter",
+  frame: "quad",
+  physicsBackend: "sitl",
+  jsonHost: "127.0.0.1",
+  simVehiclePath: "",
+  speedup: 1,
+  locationName: "CMAC",
+  gcsHost: "127.0.0.1",
+  gcsPort: 14550,
+  gcsTargets: [
+    { id: "qgc", name: "QGroundControl", enabled: true, host: "127.0.0.1", port: 14550 },
+    { id: "mission-planner", name: "Mission Planner", enabled: true, host: "127.0.0.1", port: 14551 }
+  ]
+};
