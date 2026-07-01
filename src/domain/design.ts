@@ -37,7 +37,7 @@ export interface ComponentPropertyDefinition {
 export interface ComponentDefinition {
   type: string;
   name: string;
-  category: "Core" | "Power" | "Propulsion" | "Sensors" | "Comms" | "Payload";
+  category: "Core" | "Power" | "Propulsion" | "Sensors" | "Comms" | "Payload" | "Safety";
   summary: string;
   icon: string;
   ports: ComponentPort[];
@@ -70,6 +70,14 @@ export interface SimulationSettings {
   simVehiclePath: string;
   speedup: number;
   locationName: string;
+  testScenario: "nominal" | "wind-gust" | "low-battery" | "gps-denied" | "payload-endurance";
+  missionDistanceKm: number;
+  windSpeedMps: number;
+  windGustMps: number;
+  batteryLowPercent: number;
+  batteryCriticalPercent: number;
+  batteryFailsafeAction: "Warn" | "Land" | "RTL" | "SmartRTL";
+  batteryCriticalAction: "Land" | "RTL" | "SmartRTL" | "Terminate";
   gcsHost: string;
   gcsPort: number;
   gcsTargets: GcsTargetSettings[];
@@ -92,6 +100,14 @@ export const defaultSettings: SimulationSettings = {
   simVehiclePath: "",
   speedup: 1,
   locationName: "CMAC",
+  testScenario: "nominal",
+  missionDistanceKm: 2,
+  windSpeedMps: 0,
+  windGustMps: 0,
+  batteryLowPercent: 20,
+  batteryCriticalPercent: 10,
+  batteryFailsafeAction: "RTL",
+  batteryCriticalAction: "Land",
   gcsHost: "127.0.0.1",
   gcsPort: 14550,
   gcsTargets: [

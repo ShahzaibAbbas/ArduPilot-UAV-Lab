@@ -160,6 +160,46 @@ export const componentCatalog: ComponentDefinition[] = [
     ]
   },
   {
+    type: "airspeed-sensor",
+    name: "Airspeed Sensor",
+    category: "Sensors",
+    summary: "Pitot/static source for fixed-wing wind and speed control.",
+    icon: "Wind",
+    ports: [
+      powerIn,
+      mountIn,
+      { id: "analog-out", label: "ADC", kind: "analog", direction: "output" },
+      { id: "i2c-out", label: "I2C", kind: "i2c", direction: "output" },
+      { id: "can-out", label: "CAN", kind: "can", direction: "output" }
+    ],
+    properties: [
+      { key: "model", label: "Model", type: "select", defaultValue: "MS4525DO", options: ["MS4525DO", "MS5525", "Analog MPXV7002", "DroneCAN Airspeed"] },
+      { key: "interface", label: "Interface", type: "select", defaultValue: "I2C MS4525", options: ["I2C MS4525", "I2C MS5525", "Analog", "DroneCAN"] },
+      { key: "pitotTubeMm", label: "Pitot tube", type: "number", defaultValue: 80, min: 20, max: 500, unit: "mm" },
+      { key: "ratio", label: "Ratio", type: "number", defaultValue: 2, min: 0.5, max: 5 }
+    ]
+  },
+  {
+    type: "optical-flow",
+    name: "Optical Flow",
+    category: "Sensors",
+    summary: "Ground-velocity sensor for indoor or GPS-denied hold.",
+    icon: "Radar",
+    ports: [
+      powerIn,
+      mountIn,
+      { id: "i2c-out", label: "I2C", kind: "i2c", direction: "output" },
+      { id: "can-out", label: "CAN", kind: "can", direction: "output" },
+      { id: "uart-out", label: "UART", kind: "uart", direction: "output" }
+    ],
+    properties: [
+      { key: "model", label: "Model", type: "select", defaultValue: "PX4Flow", options: ["PX4Flow", "HereFlow", "ARK Flow", "UPixels T201", "SITL Optical Flow"] },
+      { key: "interface", label: "Interface", type: "select", defaultValue: "I2C", options: ["I2C", "DroneCAN", "UART"] },
+      { key: "fovDeg", label: "Field of view", type: "number", defaultValue: 42, min: 20, max: 160, unit: "deg" },
+      { key: "requiresRangefinder", label: "Needs rangefinder", type: "boolean", defaultValue: true }
+    ]
+  },
+  {
     type: "telemetry-radio",
     name: "Telemetry Radio",
     category: "Comms",
@@ -172,6 +212,73 @@ export const componentCatalog: ComponentDefinition[] = [
     properties: [
       { key: "band", label: "Band", type: "select", defaultValue: "915 MHz", options: ["433 MHz", "868 MHz", "915 MHz", "Wi-Fi UDP"] },
       { key: "baud", label: "Baud", type: "number", defaultValue: 57600, min: 9600, max: 921600 }
+    ]
+  },
+  {
+    type: "companion-computer",
+    name: "Companion Computer",
+    category: "Comms",
+    summary: "Onboard compute for MAVLink, perception, and autonomy workloads.",
+    icon: "Cpu",
+    ports: [
+      powerIn,
+      { id: "uart-in", label: "UART", kind: "uart", direction: "input" },
+      { id: "video-in", label: "VID", kind: "video", direction: "input" },
+      { id: "uart-out", label: "UART", kind: "uart", direction: "output" },
+      { id: "can-out", label: "CAN", kind: "can", direction: "output" }
+    ],
+    properties: [
+      { key: "model", label: "Model", type: "select", defaultValue: "Raspberry Pi 5", options: ["Raspberry Pi 5", "Jetson Orin Nano", "Orange Pi 5", "SITL companion"] },
+      { key: "powerWatts", label: "Power draw", type: "number", defaultValue: 8, min: 1, max: 80, unit: "W" },
+      { key: "mavlinkBaud", label: "MAVLink baud", type: "number", defaultValue: 921600, min: 57600, max: 1500000 }
+    ]
+  },
+  {
+    type: "adsb-remote-id",
+    name: "ADSB / Remote ID",
+    category: "Comms",
+    summary: "Traffic awareness or broadcast compliance module.",
+    icon: "Radio",
+    ports: [
+      powerIn,
+      { id: "uart-out", label: "UART", kind: "uart", direction: "output" },
+      { id: "can-out", label: "CAN", kind: "can", direction: "output" }
+    ],
+    properties: [
+      { key: "mode", label: "Mode", type: "select", defaultValue: "ADSB In", options: ["ADSB In", "Remote ID", "ADSB In + Remote ID"] },
+      { key: "band", label: "Band", type: "select", defaultValue: "978 MHz", options: ["978 MHz", "1090 MHz", "2.4 GHz BLE/Wi-Fi"] }
+    ]
+  },
+  {
+    type: "parachute",
+    name: "Recovery Parachute",
+    category: "Safety",
+    summary: "Emergency recovery system triggered by ArduPilot failsafe logic.",
+    icon: "ShieldCheck",
+    ports: [
+      powerIn,
+      mountIn,
+      { id: "pwm-in", label: "PWM", kind: "pwm", direction: "input", required: true }
+    ],
+    properties: [
+      { key: "trigger", label: "Trigger", type: "select", defaultValue: "Servo release", options: ["Servo release", "Pyro cutter", "Spring deployment"] },
+      { key: "minAltitudeM", label: "Min altitude", type: "number", defaultValue: 30, min: 5, max: 500, unit: "m" },
+      { key: "criticalSinkMps", label: "Critical sink", type: "number", defaultValue: 10, min: 1, max: 50, unit: "m/s" }
+    ]
+  },
+  {
+    type: "buzzer",
+    name: "Buzzer / Status LED",
+    category: "Safety",
+    summary: "Local status, arming, and failsafe alert hardware.",
+    icon: "Siren",
+    ports: [
+      powerIn,
+      { id: "pwm-in", label: "AUX", kind: "pwm", direction: "input" }
+    ],
+    properties: [
+      { key: "alertType", label: "Alert type", type: "select", defaultValue: "Buzzer + LED", options: ["Buzzer", "LED", "Buzzer + LED"] },
+      { key: "loudnessDb", label: "Loudness", type: "number", defaultValue: 85, min: 40, max: 130, unit: "dB" }
     ]
   },
   {

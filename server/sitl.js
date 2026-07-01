@@ -123,6 +123,38 @@ function getProperty(node, key, fallback) {
   return value ?? fallback;
 }
 
+function numberValue(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function failsafeActionValue(action) {
+  const normalized = String(action || "").toLowerCase();
+  if (normalized === "land") return 1;
+  if (normalized === "rtl") return 2;
+  if (normalized === "smartrtl") return 3;
+  if (normalized === "terminate") return 5;
+  return 0;
+}
+
+function airspeedTypeValue(sensor) {
+  const interfaceName = String(getProperty(sensor, "interface", "I2C MS4525")).toLowerCase();
+  if (interfaceName.includes("analog")) return 2;
+  if (interfaceName.includes("ms5525")) return 5;
+  if (interfaceName.includes("can")) return 8;
+  return 1;
+}
+
+function opticalFlowTypeValue(sensor) {
+  const interfaceName = String(getProperty(sensor, "interface", "I2C")).toLowerCase();
+  if (interfaceName.includes("can")) return 8;
+  return 1;
+}
+
 function gcsOutputs(settings) {
   const targets = Array.isArray(settings.gcsTargets)
     ? settings.gcsTargets
@@ -164,14 +196,22 @@ function pwmTypeFor(protocol) {
 }
 
 export function generateParamContent(design) {
+  const settings = design.settings ?? {};
   const battery = firstNode(design, "battery");
   const esc = firstNode(design, "esc");
+  const airspeed = firstNode(design, "airspeed-sensor");
+  const opticalFlow = firstNode(design, "optical-flow");
+  const parachute = firstNode(design, "parachute");
   const hasGps = nodeCount(design, "gps") > 0;
   const hasCompass = nodeCount(design, "compass") > 0;
   const hasRangefinder = nodeCount(design, "rangefinder") > 0;
   const motorCount = nodeCount(design, "motor");
   const cells = Number(getProperty(battery, "cells", 4));
   const capacity = Number(getProperty(battery, "capacityMah", 5200));
+  const lowPercent = clamp(numberValue(settings.batteryLowPercent, 20), 1, 80);
+  const criticalPercent = clamp(numberValue(settings.batteryCriticalPercent, 10), 0, Math.max(0, lowPercent - 1));
+  const lowMah = Math.round(capacity * (lowPercent / 100));
+  const criticalMah = Math.round(capacity * (criticalPercent / 100));
   const lowVoltage = Math.max(3.5 * cells, 0).toFixed(1);
   const criticalVoltage = Math.max(3.3 * cells, 0).toFixed(1);
   const pwmType = pwmTypeFor(getProperty(esc, "protocol", "PWM"));
@@ -181,11 +221,17 @@ export function generateParamContent(design) {
     `# Design: ${design.name}`,
     `# Components: ${design.nodes.length}`,
     `# Motors: ${motorCount}`,
+    `# Scenario: ${settings.testScenario || "nominal"}`,
+    `# Wind/Gust target: ${numberValue(settings.windSpeedMps, 0)} / ${numberValue(settings.windGustMps, 0)} m/s`,
     "",
     "BATT_MONITOR,4",
     `BATT_CAPACITY,${capacity}`,
     `BATT_LOW_VOLT,${lowVoltage}`,
+    `BATT_LOW_MAH,${lowMah}`,
+    `BATT_FS_LOW_ACT,${failsafeActionValue(settings.batteryFailsafeAction)}`,
     `BATT_CRT_VOLT,${criticalVoltage}`,
+    `BATT_CRT_MAH,${criticalMah}`,
+    `BATT_FS_CRT_ACT,${failsafeActionValue(settings.batteryCriticalAction)}`,
     `MOT_PWM_TYPE,${pwmType}`,
     `GPS_TYPE,${hasGps ? 1 : 0}`,
     `COMPASS_ENABLE,${hasCompass ? 1 : 0}`,
@@ -195,6 +241,30 @@ export function generateParamContent(design) {
 
   if (design.settings?.vehicle === "ArduCopter") {
     lines.push("ARMING_CHECK,1");
+  }
+
+  if (airspeed) {
+    lines.push(
+      "",
+      "# Airspeed starter settings",
+      `ARSPD_TYPE,${airspeedTypeValue(airspeed)}`,
+      "ARSPD_USE,1",
+      `ARSPD_RATIO,${numberValue(getProperty(airspeed, "ratio", 2), 2)}`
+    );
+  }
+
+  if (opticalFlow) {
+    lines.push("", "# Optical flow starter settings", `FLOW_TYPE,${opticalFlowTypeValue(opticalFlow)}`);
+  }
+
+  if (parachute) {
+    lines.push(
+      "",
+      "# Parachute starter settings",
+      "CHUTE_ENABLED,1",
+      `CHUTE_ALT_MIN,${numberValue(getProperty(parachute, "minAltitudeM", 30), 30)}`,
+      `CHUTE_CRT_SINK,${numberValue(getProperty(parachute, "criticalSinkMps", 10), 10)}`
+    );
   }
 
   return `${lines.join("\n")}\n`;
@@ -251,6 +321,26 @@ export async function buildSitlPlan(design) {
 
   if (settings.physicsBackend === "json") {
     notes.push("Start your external physics process before launching the JSON backend.");
+  }
+
+  if (settings.testScenario && settings.testScenario !== "nominal") {
+    notes.push(`Scenario selected: ${settings.testScenario}. Confirm matching mission actions in your ground station before flight testing.`);
+  }
+
+  if (Number(settings.windSpeedMps) > 0 || Number(settings.windGustMps) > 0) {
+    notes.push(
+      `Wind target ${numberValue(settings.windSpeedMps, 0)} m/s, gust ${numberValue(settings.windGustMps, 0)} m/s. Mirror these values in Gazebo wind plugin or the JSON physics process.`
+    );
+  }
+
+  if (settings.testScenario === "low-battery") {
+    notes.push(
+      `Battery failsafe export uses low ${numberValue(settings.batteryLowPercent, 20)}% -> ${settings.batteryFailsafeAction || "RTL"}, critical ${numberValue(settings.batteryCriticalPercent, 10)}% -> ${settings.batteryCriticalAction || "Land"}.`
+    );
+  }
+
+  if (settings.testScenario === "gps-denied") {
+    notes.push("For GPS-denied testing, disable or degrade GPS in the simulator and verify optical-flow/rangefinder coverage in validation.");
   }
 
   if (!detection.available) {

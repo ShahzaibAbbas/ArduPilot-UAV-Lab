@@ -143,6 +143,13 @@ export function validateDesign(
   const escs = nodesOf(nodes, "esc");
   const gps = nodesOf(nodes, "gps");
   const compass = nodesOf(nodes, "compass");
+  const rangefinders = nodesOf(nodes, "rangefinder");
+  const airspeedSensors = nodesOf(nodes, "airspeed-sensor");
+  const opticalFlowSensors = nodesOf(nodes, "optical-flow");
+  const companionComputers = nodesOf(nodes, "companion-computer");
+  const adsbRemoteId = nodesOf(nodes, "adsb-remote-id");
+  const parachutes = nodesOf(nodes, "parachute");
+  const buzzers = nodesOf(nodes, "buzzer");
 
   if (flightControllers.length === 0) {
     issues.push({
@@ -177,6 +184,24 @@ export function validateDesign(
       severity: "warning",
       title: "Power module missing",
       message: "A power module gives ArduPilot voltage and current telemetry."
+    });
+  }
+
+  if (settings.batteryCriticalPercent >= settings.batteryLowPercent) {
+    issues.push({
+      id: "battery-failsafe-threshold-order",
+      severity: "error",
+      title: "Battery thresholds reversed",
+      message: "Critical battery percent must be lower than the low battery percent."
+    });
+  }
+
+  if (settings.batteryFailsafeAction === "Warn" && settings.testScenario === "low-battery") {
+    issues.push({
+      id: "battery-failsafe-warn-only",
+      severity: "warning",
+      title: "Low battery action only warns",
+      message: "The low-battery test scenario should use Land, RTL, or SmartRTL to exercise an automated failsafe response."
     });
   }
 
@@ -303,6 +328,97 @@ export function validateDesign(
       severity: "info",
       title: "Compass optional",
       message: "Add an external compass when heading quality matters."
+    });
+  }
+
+  if (settings.vehicle === "ArduPlane" && airspeedSensors.length === 0) {
+    issues.push({
+      id: "airspeed-missing-plane",
+      severity: Number(settings.windSpeedMps) > 6 || Number(settings.windGustMps) > 10 ? "warning" : "info",
+      title: "Airspeed sensor recommended",
+      message: "Fixed-wing and VTOL designs should include an airspeed sensor for wind-aware speed control and stall margin."
+    });
+  }
+
+  if (settings.testScenario === "gps-denied") {
+    if (opticalFlowSensors.length === 0) {
+      issues.push({
+        id: "gps-denied-flow-missing",
+        severity: "warning",
+        title: "GPS-denied sensor missing",
+        message: "Add optical flow for the GPS-denied scenario so horizontal motion can still be estimated."
+      });
+    }
+    if (rangefinders.length === 0) {
+      issues.push({
+        id: "gps-denied-rangefinder-missing",
+        severity: "warning",
+        title: "Rangefinder missing",
+        message: "Optical-flow hold normally needs a range source for height above ground."
+      });
+    }
+  }
+
+  for (const flow of opticalFlowSensors) {
+    if (flow.data.properties.requiresRangefinder !== false && rangefinders.length === 0) {
+      issues.push({
+        id: `flow-${flow.id}-rangefinder`,
+        severity: "warning",
+        title: "Optical flow needs range",
+        message: `${flow.data.label} is configured to require a rangefinder.`,
+        nodeIds: [flow.id]
+      });
+    }
+    if (!hasIncoming(edges, flow.id, "mount-in", "frame", nodes)) {
+      issues.push({
+        id: `flow-${flow.id}-mount`,
+        severity: "info",
+        title: "Optical flow not mounted",
+        message: `${flow.data.label} should be mounted to the airframe with a clear downward view.`,
+        nodeIds: [flow.id]
+      });
+    }
+  }
+
+  for (const parachute of parachutes) {
+    if (!hasIncoming(edges, parachute.id, "pwm-in", "flight-controller", nodes)) {
+      issues.push({
+        id: `parachute-${parachute.id}-trigger`,
+        severity: "warning",
+        title: "Parachute trigger missing",
+        message: `${parachute.data.label} needs a flight-controller AUX/PWM trigger connection.`,
+        nodeIds: [parachute.id]
+      });
+    }
+  }
+
+  for (const buzzer of buzzers) {
+    if (!hasIncoming(edges, buzzer.id, "pwm-in", "flight-controller", nodes)) {
+      issues.push({
+        id: `buzzer-${buzzer.id}-trigger`,
+        severity: "info",
+        title: "Status output not wired",
+        message: `${buzzer.data.label} can be connected to an AUX output for local failsafe alerts.`,
+        nodeIds: [buzzer.id]
+      });
+    }
+  }
+
+  if (companionComputers.length > 0 && !hasConnection(edges, nodes, "flight-controller", "companion-computer", "uart-in")) {
+    issues.push({
+      id: "companion-link-missing",
+      severity: "info",
+      title: "Companion MAVLink link missing",
+      message: "Connect the flight-controller UART output to the companion computer UART input for onboard autonomy."
+    });
+  }
+
+  if (adsbRemoteId.length > 0 && !hasConnection(edges, nodes, "adsb-remote-id", "flight-controller")) {
+    issues.push({
+      id: "traffic-module-link-missing",
+      severity: "info",
+      title: "Traffic module not wired",
+      message: "Connect ADSB or Remote ID modules to the flight controller by UART or CAN."
     });
   }
 

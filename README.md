@@ -5,14 +5,28 @@ A local design-and-simulation workspace for assembling UAV components, validatin
 ## What is included
 
 - Component catalog for frame, flight controller, battery, power module, ESC, motors, GPS, compass, rangefinder, telemetry, camera, and gimbal.
+- Extended UAV subsystem catalog for airspeed sensors, optical flow, companion computers, ADS-B/Remote ID, recovery parachutes, and buzzer/status LED hardware.
 - Visual connection canvas powered by React Flow.
 - Object-specific block shapes for fast visual scanning.
-- Compatibility checks for port direction, signal type, power path, motor/ESC coverage, frame motor count, and common ArduPilot sensor wiring.
-- Local AI-style performance estimator for mass, energy, endurance, range, payload margin, and assumptions from selected components and specs.
+- Compatibility checks for port direction, signal type, power path, motor/ESC coverage, frame motor count, ArduPilot sensor wiring, GPS-denied sensor coverage, parachute trigger wiring, and battery failsafe threshold order.
+- Mission test settings for nominal, wind gust, low battery, GPS denied, and payload endurance scenarios.
+- Local AI-style performance estimator for mass, energy, endurance, range, payload margin, mission reserve, wind penalty, current margin, and assumptions from selected components and specs.
 - JSON design export and server-side design save.
 - Workspace save/load using `.saq` files.
-- ArduPilot `.param` starter export from the selected components.
+- ArduPilot `.param` starter export from the selected components, including two-layer battery failsafe thresholds/actions and starter params for airspeed, optical flow, and parachute components.
 - SITL command planning for native SITL frames and the ArduPilot JSON physics backend.
+- In-app software update button for Git checkouts. It runs `git pull --ff-only`, `npm install`, and `npm run build`.
+
+Contact: shahzaib.abbas@hotmail.com
+
+## Research-guided additions
+
+The newest simulator controls were based on public UAV simulation and design references:
+
+- ArduPilot battery failsafe docs: low and critical voltage/capacity thresholds plus automated actions such as Land, RTL, and SmartRTL.
+- PX4/Gazebo simulation docs: wind speed, gusts, object-avoidance/perception simulation, and failure-test workflows.
+- ArduPilot airspeed, optical-flow, parachute, and simulation-on-hardware docs: component parameters, simulated sensors, and defaults-file workflow.
+- Multirotor design guidance from ArduPilot and Tyto Robotics: motor/prop/ESC/battery matching, endurance targets, and flight-time estimation loops.
 
 ## Launchers
 
@@ -29,11 +43,20 @@ chmod +x ./Launch-macOS.command
 ./Launch-macOS.command
 ```
 
-The launchers check for Node.js 18 or newer and npm, install Node.js through `winget` on Windows or Homebrew on macOS when available, create the local `data/` and `backups/` folders, install missing npm packages, open `http://127.0.0.1:5173`, and start the app.
+Ubuntu:
+
+```bash
+chmod +x ./Launch-Ubuntu.sh
+./Launch-Ubuntu.sh
+```
+
+The launchers check for Node.js 18 or newer and npm, install Node.js through `winget` on Windows or Homebrew on macOS when available, create the local `data/` and `backups/` folders, install missing npm packages, open `http://127.0.0.1:5173`, and start the app. The Ubuntu launcher reports the exact `apt` commands if Node.js or npm is missing.
 
 They install the files needed for this web app. ArduPilot SITL itself is still detected separately through `sim_vehicle.py`, `ARDUPILOT_HOME`, `ARDUPILOT_ROOT`, or `PATH`.
 
 Designed by UAS Doctoral Tech.
+
+Support email: shahzaib.abbas@hotmail.com
 
 ## Manual Run
 
@@ -43,6 +66,12 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173`.
+
+## Software update button
+
+Use the top-bar Update button when the app folder was cloned from Git. The backend updates conservatively with `git pull --ff-only`, refreshes npm packages with `npm install`, and compiles the app with `npm run build`.
+
+If the app was copied as a ZIP or upload package without a `.git` folder, the button will show a message that a Git checkout is required.
 
 ## Workspace files
 
@@ -87,4 +116,5 @@ src/
 - Custom component library persistence.
 - Multi-vehicle swarm layouts.
 - JSON physics bridge process templates.
-- Mission import/export and pre-arm test scenarios.
+- Mission import/export and automated pre-arm test scenarios.
+- Gazebo world/plugin file generation for wind and sensor-failure scenarios.

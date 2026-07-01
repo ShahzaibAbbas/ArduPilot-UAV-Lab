@@ -20,6 +20,12 @@ export interface SitlPlan {
   notes: string[];
 }
 
+export interface SoftwareUpdateResult {
+  updated: boolean;
+  message: string;
+  steps: Array<{ command: string; output: string }>;
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -83,6 +89,14 @@ export async function launchSitl(design: UavDesign) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(design)
+    })
+  );
+}
+
+export async function updateSoftware() {
+  return parseResponse<SoftwareUpdateResult>(
+    await fetch("/api/software/update", {
+      method: "POST"
     })
   );
 }

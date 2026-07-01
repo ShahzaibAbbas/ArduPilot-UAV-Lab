@@ -1,13 +1,22 @@
 import cors from "cors";
 import express from "express";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { z } from "zod";
 import { listDesigns, saveDesign } from "./designStore.js";
 import { buildSitlPlan, generateParamContent, getSystemStatus } from "./sitl.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, "..");
+const execFileAsync = promisify(execFile);
 const app = express();
 const port = Number(process.env.PORT || 4310);
 const activeProcesses = new Map();
+let softwareUpdateRunning = false;
+const localHostnames = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const designSchema = z.object({
   id: z.string().optional(),
@@ -21,11 +30,97 @@ const locateSchema = z.object({
   simVehiclePath: z.string().optional()
 });
 
-app.use(cors({ origin: true }));
+async function exists(target) {
+  try {
+    await stat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runMaintenanceStep(command, args) {
+  const { stdout, stderr } = await execFileAsync(command, args, {
+    cwd: projectRoot,
+    env: process.env,
+    maxBuffer: 1024 * 1024 * 8,
+    windowsHide: true
+  });
+
+  return {
+    command: [command, ...args].join(" "),
+    output: [stdout, stderr].filter(Boolean).join("\n").trim()
+  };
+}
+
+function isAllowedLocalOrigin(origin) {
+  if (!origin) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(origin);
+    return ["http:", "https:"].includes(parsed.protocol) && localHostnames.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function requireLocalOrigin(request, response, next) {
+  if (!isAllowedLocalOrigin(request.get("origin"))) {
+    response.status(403).json({ error: "Only local browser origins are allowed." });
+    return;
+  }
+
+  next();
+}
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      callback(null, isAllowedLocalOrigin(origin));
+    }
+  })
+);
+app.use(requireLocalOrigin);
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/api/health", (_request, response) => {
   response.json({ ok: true });
+});
+
+app.post("/api/software/update", async (_request, response, next) => {
+  if (softwareUpdateRunning) {
+    response.status(409).json({ error: "A software update is already running." });
+    return;
+  }
+
+  try {
+    if (!(await exists(path.join(projectRoot, ".git")))) {
+      response.status(409).json({
+        error: "This folder is not a Git checkout. Clone the project from Git first, then use Update Software."
+      });
+      return;
+    }
+
+    softwareUpdateRunning = true;
+    const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+    const steps = [];
+
+    steps.push(await runMaintenanceStep("git", ["pull", "--ff-only"]));
+    steps.push(await runMaintenanceStep(npmCommand, ["install"]));
+    steps.push(await runMaintenanceStep(npmCommand, ["run", "build"]));
+
+    response.json({
+      updated: true,
+      message: "Software updated from Git and compiled successfully.",
+      steps
+    });
+  } catch (error) {
+    next(error);
+  } finally {
+    softwareUpdateRunning = false;
+  }
 });
 
 app.get("/api/system", async (_request, response, next) => {

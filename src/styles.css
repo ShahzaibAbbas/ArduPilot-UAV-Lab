@@ -54,14 +54,14 @@ button:disabled {
 
 .app-shell {
   display: grid;
-  grid-template-rows: 74px minmax(0, 1fr) 32px;
+  grid-template-rows: 88px minmax(0, 1fr) 32px;
   height: 100vh;
   min-width: 1060px;
 }
 
 .topbar {
   display: grid;
-  grid-template-columns: 310px minmax(360px, 1fr) auto;
+  grid-template-columns: 340px minmax(360px, 1fr) auto;
   align-items: center;
   gap: 18px;
   padding: 12px 18px;
@@ -79,6 +79,15 @@ button:disabled {
   color: var(--teal);
 }
 
+.brand-logo {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(19, 138, 131, 0.22);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
 .brand h1 {
   margin: 0;
   font-size: 18px;
@@ -86,7 +95,7 @@ button:disabled {
 }
 
 .brand input {
-  width: 240px;
+  width: 250px;
   margin-top: 4px;
   border: 0;
   border-bottom: 1px solid transparent;
@@ -108,6 +117,41 @@ button:disabled {
   letter-spacing: 0;
   line-height: 1.1;
   text-transform: uppercase;
+}
+
+.brand-email {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.brand-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.brand-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid rgba(19, 138, 131, 0.22);
+  border-radius: 999px;
+  background: #f3fbfa;
+  color: var(--teal);
+  font-size: 10px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.brand-links a:hover {
+  border-color: var(--teal);
 }
 
 .health-strip {
@@ -186,6 +230,10 @@ button:disabled {
 
 .top-actions button:nth-child(3) {
   background: var(--teal);
+}
+
+.top-actions button:nth-child(4) {
+  background: var(--green);
 }
 
 .workspace {
@@ -758,6 +806,38 @@ button:disabled {
   top: 24px;
 }
 
+.object-shape-airspeed-sensor .shape-plate {
+  width: 54px;
+  height: 16px;
+  border-radius: 999px;
+  background: #eef4ff;
+  border-color: rgba(45, 108, 223, 0.35);
+}
+
+.object-shape-airspeed-sensor .shape-arm-a {
+  left: 13px;
+  top: 18px;
+  width: 62px;
+  height: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(45, 108, 223, 0.52);
+}
+
+.object-shape-optical-flow .shape-plate {
+  width: 42px;
+  height: 34px;
+  border-radius: 7px;
+  background: #f3fbfa;
+}
+
+.object-shape-optical-flow .shape-lens {
+  width: 18px;
+  height: 18px;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 7px rgba(19, 138, 131, 0.08);
+}
+
 .object-shape-telemetry-radio .shape-plate {
   width: 34px;
   height: 28px;
@@ -796,6 +876,83 @@ button:disabled {
 
 .object-shape-camera .shape-lens {
   border-color: #bd3d78;
+}
+
+.object-shape-companion-computer .shape-plate {
+  width: 52px;
+  height: 32px;
+  border-radius: 6px;
+  background: #ecf3ff;
+  border-color: #b8c9f5;
+}
+
+.object-shape-companion-computer .shape-lens {
+  width: 22px;
+  height: 10px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, #2d6cdf 0 3px, #ffffff 3px 6px);
+  border-color: rgba(45, 108, 223, 0.25);
+}
+
+.object-shape-adsb-remote-id .shape-plate {
+  width: 36px;
+  height: 28px;
+  border-radius: 8px;
+  background: #eef4ff;
+  border-color: rgba(45, 108, 223, 0.35);
+}
+
+.object-shape-adsb-remote-id .shape-arm {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow:
+    0 0 0 2px rgba(45, 108, 223, 0.2),
+    0 0 0 8px rgba(45, 108, 223, 0.08);
+}
+
+.object-shape-parachute .shape-plate {
+  width: 54px;
+  height: 24px;
+  border-radius: 24px 24px 8px 8px;
+  background: #f2faf4;
+  border-color: rgba(37, 138, 71, 0.35);
+}
+
+.object-shape-parachute .shape-arm {
+  top: 27px;
+  width: 3px;
+  height: 14px;
+  border: 0;
+  background: rgba(37, 138, 71, 0.42);
+}
+
+.object-shape-parachute .shape-arm-a {
+  left: 32px;
+  transform: rotate(20deg);
+}
+
+.object-shape-parachute .shape-arm-b {
+  right: 32px;
+  transform: rotate(-20deg);
+}
+
+.object-shape-buzzer .shape-plate {
+  width: 42px;
+  height: 30px;
+  border-radius: 7px;
+  background: #fff7ed;
+  border-color: rgba(197, 107, 33, 0.35);
+}
+
+.object-shape-buzzer .shape-lens {
+  width: 18px;
+  height: 18px;
+  background: var(--orange);
+  border: 0;
+  box-shadow:
+    -18px 0 0 rgba(197, 107, 33, 0.2),
+    18px 0 0 rgba(197, 107, 33, 0.2);
 }
 
 .object-shape-gimbal .shape-plate {
@@ -970,6 +1127,132 @@ button:disabled {
   stroke-width: 2.2;
 }
 
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke-width: 4;
+  filter: drop-shadow(0 0 4px rgba(45, 108, 223, 0.3));
+}
+
+.react-flow__edge-text {
+  font-family: inherit;
+  letter-spacing: 0;
+}
+
+.react-flow__edge-textbg {
+  stroke: rgba(30, 41, 48, 0.12);
+  stroke-width: 1;
+}
+
+.connection-tooltip {
+  position: fixed;
+  z-index: 30;
+  display: grid;
+  gap: 4px;
+  width: 280px;
+  max-width: calc(100vw - 24px);
+  padding: 10px;
+  border: 1px solid rgba(30, 41, 48, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.connection-tooltip strong,
+.connection-tooltip span,
+.connection-tooltip small,
+.connection-tooltip em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.connection-tooltip strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.connection-tooltip span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.connection-tooltip small {
+  color: var(--teal);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.connection-tooltip em {
+  color: var(--orange);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.object-context-menu {
+  position: fixed;
+  z-index: 35;
+  display: grid;
+  gap: 4px;
+  width: 224px;
+  padding: 8px;
+  border: 1px solid rgba(30, 41, 48, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.context-menu-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 6px 7px;
+  border-bottom: 1px solid var(--line);
+}
+
+.context-menu-title strong,
+.context-menu-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu-title strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.context-menu-title small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.object-context-menu button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.object-context-menu button:hover {
+  background: #edf1f3;
+}
+
+.object-context-menu button.danger {
+  color: var(--red);
+}
+
 .flow-panel {
   display: inline-flex;
   align-items: center;
@@ -1059,6 +1342,7 @@ button:disabled {
 
 .connection-legend h2,
 .gcs-targets h2,
+.mission-test h2,
 .sitl-locator h2 {
   margin: 0;
   color: var(--muted);
@@ -1160,7 +1444,9 @@ button:disabled {
 }
 
 .object-editor,
-.product-spec-editor {
+.product-spec-editor,
+.connection-editor,
+.connection-issues {
   margin: 4px 0 14px;
   padding: 10px;
   border: 1px solid var(--line);
@@ -1169,7 +1455,9 @@ button:disabled {
 }
 
 .object-editor h2,
-.product-spec-editor h2 {
+.product-spec-editor h2,
+.connection-editor h2,
+.connection-issues h2 {
   margin: 0 0 9px;
   color: var(--muted);
   font-size: 11px;
@@ -1180,6 +1468,58 @@ button:disabled {
 
 .product-spec-editor .field:last-child {
   margin-bottom: 0;
+}
+
+.connection-route-card {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 9px;
+  padding: 9px;
+  border: 1px solid #cfd9d7;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.connection-route-card strong,
+.connection-route-card span,
+.connection-route-card small,
+.connection-issues p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.connection-route-card strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.connection-route-card span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.connection-route-card small {
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.connection-issues {
+  display: grid;
+  gap: 7px;
+}
+
+.connection-issues p {
+  margin: 0;
+  padding: 8px;
+  border-left: 4px solid var(--orange);
+  border-radius: 6px;
+  background: #fff7ed;
+  color: var(--orange);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .position-grid {
@@ -1199,7 +1539,8 @@ button:disabled {
 }
 
 .sitl-locator,
-.gcs-targets {
+.gcs-targets,
+.mission-test {
   display: grid;
   gap: 9px;
   margin: 0 0 14px;
@@ -1263,8 +1604,27 @@ button:disabled {
   gap: 8px;
 }
 
-.gcs-target-grid .field {
+.environment-grid,
+.failsafe-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.gcs-target-grid .field,
+.environment-grid .field,
+.failsafe-grid .field {
   margin: 0;
+}
+
+.scenario-note {
+  margin: 0;
+  padding: 8px;
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .port-row {
@@ -1564,6 +1924,30 @@ button:disabled {
   background-size: 22px 22px;
 }
 
+.wind-visual {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 58px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(45, 108, 223, 0.22);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--muted);
+  box-shadow: 0 5px 14px rgba(26, 43, 58, 0.12);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.wind-visual.active {
+  color: var(--blue);
+}
+
 .vehicle-axis {
   position: absolute;
   left: 50%;
@@ -1706,6 +2090,59 @@ button:disabled {
   color: var(--blue);
 }
 
+.sensor-visual.airspeed {
+  left: 12px;
+  top: 44px;
+  color: var(--blue);
+}
+
+.sensor-visual.optical-flow {
+  left: 12px;
+  bottom: 44px;
+  color: var(--teal);
+}
+
+.sensor-visual.companion {
+  left: 12px;
+  top: 76px;
+  color: var(--text);
+}
+
+.sensor-visual.adsb {
+  right: 12px;
+  top: 76px;
+  color: var(--blue);
+}
+
+.safety-visual {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(37, 138, 71, 0.22);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 7px 18px rgba(26, 43, 58, 0.14);
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.safety-visual.parachute {
+  left: 50%;
+  top: 14px;
+  transform: translateX(-50%);
+}
+
+.safety-visual.buzzer {
+  left: 78px;
+  bottom: 12px;
+  color: var(--orange);
+}
+
 .payload-visual {
   left: 50%;
   bottom: 17px;
@@ -1809,7 +2246,7 @@ button:disabled {
   }
 
   .topbar {
-    grid-template-columns: 280px minmax(280px, 1fr) auto;
+    grid-template-columns: 320px minmax(280px, 1fr) auto;
   }
 
   .health-count {

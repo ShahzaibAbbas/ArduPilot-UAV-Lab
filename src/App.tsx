@@ -4,6 +4,7 @@ import {
   applyNodeChanges,
   Background,
   BackgroundVariant,
+  ConnectionLineType,
   Controls,
   Handle,
   MarkerType,
@@ -11,6 +12,7 @@ import {
   Panel,
   Position,
   ReactFlow,
+  reconnectEdge,
   useReactFlow,
   type Connection,
   type EdgeChange,
@@ -28,25 +30,31 @@ import {
   Copy,
   Cpu,
   Download,
+  ExternalLink,
   FilePlus,
   FileJson,
   FolderOpen,
   Gauge,
   GitBranch,
+  Link2,
   MapPin,
   Pencil,
   Play,
   Plus,
-  PlugZap,
   Radio,
+  Radar,
+  RefreshCw,
   RotateCcw,
   Rotate3D,
   Save,
   ScanLine,
   Search,
   Settings,
+  ShieldCheck,
+  Siren,
   Sparkles,
   Trash2,
+  Wind,
   Zap,
   type LucideIcon
 } from "lucide-react";
@@ -70,6 +78,7 @@ import {
   launchSitl,
   locateSimVehicle,
   saveDesign,
+  updateSoftware,
   type SitlPlan,
   type SystemStatus
 } from "./lib/api";
@@ -86,13 +95,21 @@ const iconMap = {
   Gauge,
   MapPin,
   Radio,
+  Radar,
   Rotate3D,
   ScanLine,
+  ShieldCheck,
+  Siren,
+  Wind,
   Zap,
   Frame: Boxes
 };
 
 type AppTab = "inspector" | "validation" | "simulation" | "performance";
+type ObjectContextMenu =
+  | { kind: "node"; nodeId: string; x: number; y: number }
+  | { kind: "edge"; edgeId: string; x: number; y: number };
+type HoveredConnection = { edgeId: string; x: number; y: number };
 
 const NODE_CARD_WIDTH = 196;
 const NODE_CARD_MIN_HEIGHT = 142;
@@ -364,6 +381,99 @@ function signalForEdge(edge: DesignEdge, nodes: DesignNode[]): SignalKind | unde
   return sourcePort?.kind ?? targetPort?.kind;
 }
 
+function portText(label?: string | null, fallback = "port") {
+  return label?.trim() || fallback;
+}
+
+function connectionDetails(edge: DesignEdge, nodes: DesignNode[]) {
+  const source = nodes.find((node) => node.id === edge.source);
+  const target = nodes.find((node) => node.id === edge.target);
+  const sourcePort = source ? getPort(source.data.componentType, edge.sourceHandle) : undefined;
+  const targetPort = target ? getPort(target.data.componentType, edge.targetHandle) : undefined;
+  const signal = signalForEdge(edge, nodes);
+  const sourceName = source?.data.label ?? edge.source;
+  const targetName = target?.data.label ?? edge.target;
+  const sourcePortName = portText(sourcePort?.label, edge.sourceHandle ?? "source");
+  const targetPortName = portText(targetPort?.label, edge.targetHandle ?? "target");
+  const sourceSignal = sourcePort?.kind ?? "unknown";
+  const targetSignal = targetPort?.kind ?? "unknown";
+  const issues = edge.data?.issues ?? [];
+
+  return {
+    signal,
+    label: signal ? signalLabel(signal) : "LINK",
+    title: `${sourceName} -> ${targetName}`,
+    route: `${sourceName} ${sourcePortName} -> ${targetName} ${targetPortName}`,
+    sourceName,
+    targetName,
+    sourcePortName,
+    targetPortName,
+    sourceDetail: `${sourcePort?.direction ?? "source"} / ${sourceSignal}`,
+    targetDetail: `${targetPort?.direction ?? "target"} / ${targetSignal}`,
+    summary: signal ? `${signalLabel(signal)} ${sourceSignal === targetSignal ? "signal" : "route"}` : "Connection",
+    issues
+  };
+}
+
+function connectionTooltip(edge: DesignEdge, nodes: DesignNode[]) {
+  const details = connectionDetails(edge, nodes);
+  return [details.title, details.route, `${details.sourceDetail} -> ${details.targetDetail}`, ...details.issues].join("\n");
+}
+
+function checkPortConnection(connection: Connection | DesignEdge, nodes: DesignNode[]) {
+  if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
+    return { valid: false, message: "Choose a source output and target input port." };
+  }
+
+  if (connection.source === connection.target) {
+    return { valid: false, message: "A component cannot connect to itself." };
+  }
+
+  const source = nodes.find((node) => node.id === connection.source);
+  const target = nodes.find((node) => node.id === connection.target);
+  if (!source || !target) {
+    return { valid: false, message: "Choose components that still exist in the workspace." };
+  }
+
+  const sourcePort = getPort(source.data.componentType, connection.sourceHandle);
+  const targetPort = getPort(target.data.componentType, connection.targetHandle);
+  if (!sourcePort || !targetPort) {
+    return { valid: false, message: "Choose defined source and target ports." };
+  }
+
+  if (sourcePort.direction !== "output" || targetPort.direction !== "input") {
+    return { valid: false, message: "Connections must run from an output port into an input port." };
+  }
+
+  if (sourcePort.kind !== targetPort.kind) {
+    return { valid: false, message: `${sourcePort.kind.toUpperCase()} cannot connect to ${targetPort.kind.toUpperCase()}.` };
+  }
+
+  return { valid: true, message: "Connection valid" };
+}
+
+function sameConnection(a: Connection | DesignEdge, b: Connection | DesignEdge) {
+  return (
+    a.source === b.source &&
+    a.target === b.target &&
+    (a.sourceHandle ?? null) === (b.sourceHandle ?? null) &&
+    (a.targetHandle ?? null) === (b.targetHandle ?? null)
+  );
+}
+
+function anchoredLayerPosition(point: { clientX?: number; clientY?: number; x?: number; y?: number }, width: number, height: number, offset = 8) {
+  const x = point.clientX ?? point.x ?? offset;
+  const y = point.clientY ?? point.y ?? offset;
+  return {
+    x: Math.max(offset, Math.min(x + offset, window.innerWidth - width - offset)),
+    y: Math.max(offset, Math.min(y + offset, window.innerHeight - height - offset))
+  };
+}
+
+function isTextEditingTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable='true'], .nokey"));
+}
+
 function targetDefaults(settings: SimulationSettings): GcsTargetSettings[] {
   return settings.gcsTargets?.length
     ? settings.gcsTargets
@@ -489,8 +599,14 @@ const buildGuideSteps: BuildGuideStep[] = [
   { componentType: "motor", placement: "Place motors around the frame in the selected layout order.", target: motorDrivenTarget },
   { componentType: "gps", placement: "Place above or away from power wiring and connect by UART.", target: singleComponentTarget },
   { componentType: "compass", placement: "Place away from high current wiring and connect by I2C.", target: singleComponentTarget },
+  { componentType: "airspeed-sensor", placement: "Place in clean airflow for fixed-wing or wind-heavy tests.", optional: true, target: singleComponentTarget },
+  { componentType: "optical-flow", placement: "Mount downward with a rangefinder for GPS-denied hover tests.", optional: true, target: singleComponentTarget },
   { componentType: "telemetry-radio", placement: "Place at the right comms side and connect by UART.", target: singleComponentTarget },
+  { componentType: "companion-computer", placement: "Place near the FC for a short MAVLink UART and payload data path.", optional: true, target: singleComponentTarget },
+  { componentType: "adsb-remote-id", placement: "Place with comms hardware when traffic awareness or broadcast ID is needed.", optional: true, target: singleComponentTarget },
   { componentType: "rangefinder", placement: "Place on the lower sensor side for altitude or obstacle data.", optional: true, target: singleComponentTarget },
+  { componentType: "parachute", placement: "Mount on the frame and connect an AUX/PWM trigger for recovery tests.", optional: true, target: singleComponentTarget },
+  { componentType: "buzzer", placement: "Place as a status output for arming and failsafe alerts.", optional: true, target: singleComponentTarget },
   { componentType: "camera", placement: "Place with the payload stack after core flight parts are complete.", optional: true, target: singleComponentTarget },
   { componentType: "gimbal", placement: "Place after camera when a stabilized payload mount is needed.", optional: true, target: singleComponentTarget }
 ];
@@ -552,6 +668,11 @@ interface PerformanceEstimate {
   rangeKm: number;
   maxSpeedMps: number;
   payloadMarginG: number;
+  missionDistanceKm: number;
+  missionReservePercent: number;
+  windPenaltyPercent: number;
+  lowBatteryReserveWh: number;
+  criticalBatteryReserveWh: number;
   performanceScore: number;
   confidence: "High" | "Medium" | "Low";
   warnings: string[];
@@ -565,6 +686,10 @@ interface PerformanceEstimate {
 }
 
 const estimatedMassByType: Record<string, number> = {
+  "adsb-remote-id": 35,
+  "airspeed-sensor": 18,
+  buzzer: 10,
+  "companion-computer": 95,
   "flight-controller": 42,
   battery: 520,
   camera: 45,
@@ -574,6 +699,8 @@ const estimatedMassByType: Record<string, number> = {
   gimbal: 180,
   gps: 28,
   motor: 68,
+  "optical-flow": 24,
+  parachute: 180,
   "power-module": 26,
   rangefinder: 18,
   "telemetry-radio": 22
@@ -683,29 +810,70 @@ function formatMetric(value: number, digits = 1, allowZero = false) {
   return value.toFixed(digits);
 }
 
+function scenarioLabel(scenario: SimulationSettings["testScenario"]) {
+  const labels: Record<SimulationSettings["testScenario"], string> = {
+    "gps-denied": "GPS Denied",
+    "low-battery": "Low Battery",
+    nominal: "Nominal",
+    "payload-endurance": "Payload Endurance",
+    "wind-gust": "Wind Gust"
+  };
+  return labels[scenario];
+}
+
+function scenarioHint(settings: SimulationSettings) {
+  if (settings.testScenario === "wind-gust") {
+    return "Runs the design against configured wind and gust values; external physics backends should mirror these values.";
+  }
+  if (settings.testScenario === "low-battery") {
+    return "Exports low and critical battery reserve parameters so the failsafe response can be tested in SITL.";
+  }
+  if (settings.testScenario === "gps-denied") {
+    return "Checks for local-position sensors such as optical flow plus rangefinder before GPS-denied testing.";
+  }
+  if (settings.testScenario === "payload-endurance") {
+    return "Emphasizes mission range reserve and avionics/payload energy draw.";
+  }
+  return "Baseline configuration for normal SITL launch and component validation.";
+}
+
 function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, selectedNode?: DesignNode): PerformanceEstimate {
   const massItems = nodes.map(estimateMass);
   const totalMassG = massItems.reduce((sum, item) => sum + item.massG, 0);
   const batteries = nodesByType(nodes, "battery").map(estimateBattery);
   const batteryEnergyWh = batteries.reduce((sum, battery) => sum + battery.energyWh, 0);
-  const usableEnergyWh = batteries.reduce((sum, battery) => sum + battery.usableWh, 0);
+  const lowBatteryPercent = clamp(finiteNumber(settings.batteryLowPercent, 20), 1, 80);
+  const criticalBatteryPercent = clamp(finiteNumber(settings.batteryCriticalPercent, 10), 0, 79);
+  const lowBatteryReserveWh = batteryEnergyWh * (lowBatteryPercent / 100);
+  const criticalBatteryReserveWh = batteryEnergyWh * (criticalBatteryPercent / 100);
+  const usableEnergyWh = batteryEnergyWh > 0 ? Math.max(0, batteryEnergyWh - lowBatteryReserveWh) : 0;
   const motors = nodesByType(nodes, "motor");
+  const escs = nodesByType(nodes, "esc");
+  const companionPowerW = nodesByType(nodes, "companion-computer").reduce((sum, node) => sum + propertyNumber(node, "powerWatts", 8), 0);
   const totalThrustG = motors.reduce((sum, motor) => sum + propertyNumber(motor, "thrustGrams", 900), 0);
   const totalMaxMotorPowerW = motors.reduce((sum, motor) => sum + estimateMotorMaxPower(motor), 0);
   const totalMassKg = totalMassG / 1000;
   const thrustToWeight = totalMassG > 0 ? totalThrustG / totalMassG : 0;
   const hoverThrottle = totalThrustG > 0 ? clamp(totalMassG / totalThrustG, 0, 1.4) : 0;
-  const hoverPowerW =
+  const windSpeedMps = clamp(finiteNumber(settings.windSpeedMps, 0), 0, 60);
+  const windGustMps = clamp(finiteNumber(settings.windGustMps, 0), 0, 80);
+  const windPowerMultiplier =
+    settings.vehicle === "Rover" ? 1 : 1 + clamp(windSpeedMps / 24, 0, 0.34) + clamp(Math.max(windGustMps - windSpeedMps, 0) / 26, 0, 0.26);
+  const baseHoverPowerW =
     motors.length > 0 && totalMaxMotorPowerW > 0
-      ? totalMaxMotorPowerW * Math.pow(clamp(hoverThrottle, 0.22, 1.15), 1.5) * 1.12
+      ? totalMaxMotorPowerW *
+          Math.pow(clamp(hoverThrottle, 0.22, 1.15), 1.5) *
+          1.12 *
+          (settings.vehicle === "ArduCopter" ? 1 + clamp((windSpeedMps + windGustMps) / 70, 0, 0.22) : 1)
       : 0;
+  const hoverPowerW = baseHoverPowerW > 0 ? baseHoverPowerW + companionPowerW : 0;
 
   const cruisePowerW =
     settings.vehicle === "ArduPlane"
-      ? Math.max(80, totalMassKg * 65, totalMaxMotorPowerW * 0.28)
+      ? Math.max(80, totalMassKg * 65, totalMaxMotorPowerW * 0.28) * windPowerMultiplier + companionPowerW
       : settings.vehicle === "Rover"
-        ? Math.max(24, totalMassKg * 16)
-        : hoverPowerW * 0.88;
+        ? Math.max(24, totalMassKg * 16) + companionPowerW
+        : baseHoverPowerW * 0.88 + companionPowerW;
   const hoverEnduranceMin = usableEnergyWh > 0 && hoverPowerW > 0 ? (usableEnergyWh / hoverPowerW) * 60 : 0;
   const missionEnduranceMin = usableEnergyWh > 0 && cruisePowerW > 0 ? (usableEnergyWh / cruisePowerW) * 60 : 0;
   const maxSpeedMps =
@@ -721,6 +889,13 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
       : settings.vehicle === "Rover"
         ? Math.max(0, totalMassG * 0.35)
         : Math.max(0, totalThrustG / 2 - totalMassG);
+  const missionDistanceKm = Math.max(0, finiteNumber(settings.missionDistanceKm, 0));
+  const missionReservePercent = rangeKm > 0 ? ((rangeKm - missionDistanceKm) / rangeKm) * 100 : 0;
+  const batteryContinuousCurrentA = batteries.reduce((sum, battery) => sum + battery.maxCurrentA, 0);
+  const escContinuousCurrentA = escs.reduce((sum, esc) => sum + propertyNumber(esc, "maxAmps", 30), 0);
+  const totalCapacityAh = batteries.reduce((sum, battery) => sum + battery.capacityAh, 0);
+  const averageVoltage = totalCapacityAh > 0 ? batteryEnergyWh / totalCapacityAh : 0;
+  const estimatedPeakCurrentA = averageVoltage > 0 ? totalMaxMotorPowerW / averageVoltage : 0;
 
   const warnings: string[] = [];
   if (nodes.length === 0) {
@@ -738,19 +913,41 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
   if (hoverThrottle > 0.75) {
     warnings.push("Estimated hover throttle is high; endurance and control margin will be limited.");
   }
-  if (nodesByType(nodes, "esc").length < motors.length) {
+  if (escs.length < motors.length) {
     warnings.push("There are fewer ESCs than motors, so propulsion hardware is incomplete.");
+  }
+  if (batteryContinuousCurrentA > 0 && estimatedPeakCurrentA > batteryContinuousCurrentA) {
+    warnings.push("Estimated peak propulsion current exceeds the battery C-rating limit.");
+  }
+  if (escContinuousCurrentA > 0 && estimatedPeakCurrentA > escContinuousCurrentA) {
+    warnings.push("Estimated peak propulsion current exceeds combined ESC current rating.");
+  }
+  if (windGustMps > 0 && maxSpeedMps > 0 && windGustMps > maxSpeedMps * 0.65 && settings.vehicle !== "Rover") {
+    warnings.push("Configured gust speed is high relative to estimated vehicle speed.");
+  }
+  if (missionDistanceKm > 0 && rangeKm > 0 && missionReservePercent < 25) {
+    warnings.push("Planned mission distance leaves less than 25% estimated range reserve.");
+  }
+  if (settings.batteryCriticalPercent >= settings.batteryLowPercent) {
+    warnings.push("Critical battery reserve must be lower than low battery reserve.");
+  }
+  if (settings.testScenario === "gps-denied" && nodesByType(nodes, "optical-flow").length === 0) {
+    warnings.push("GPS-denied scenario needs optical flow or another local-position source.");
   }
 
   const defaultMassCount = massItems.filter((item) => item.source === "estimated").length;
   const assumptions = [
-    "Usable battery energy is estimated at 80% of nominal Wh.",
+    `Usable battery energy ends at the configured ${lowBatteryPercent}% low-battery reserve.`,
     "Product spec Unit mass overrides catalog and property mass estimates.",
     settings.vehicle === "ArduPlane"
       ? "Plane cruise power is estimated from mass and installed motor power."
       : settings.vehicle === "Rover"
         ? "Rover range is estimated from mass, battery energy, and a low-speed drive model."
         : "Multirotor endurance uses hover power; range uses an efficient forward-flight power estimate.",
+    windSpeedMps > 0 || windGustMps > 0
+      ? `Wind model applies a ${Math.round((windPowerMultiplier - 1) * 100)}% cruise power penalty.`
+      : "Wind model is neutral until wind speed or gust is configured.",
+    `Scenario: ${scenarioLabel(settings.testScenario)}.`,
     defaultMassCount > 0
       ? `${defaultMassCount} component mass value${defaultMassCount === 1 ? "" : "s"} used catalog estimates.`
       : "All component masses came from specs or component properties."
@@ -764,10 +961,11 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
         : "Low";
   const performanceScore = clamp(
     Math.round(
-      (thrustToWeight ? clamp(thrustToWeight / 2.4, 0, 1) * 34 : 0) +
+        (thrustToWeight ? clamp(thrustToWeight / 2.4, 0, 1) * 34 : 0) +
         (hoverEnduranceMin ? clamp(hoverEnduranceMin / 28, 0, 1) * 28 : 0) +
-        (rangeKm ? clamp(rangeKm / 10, 0, 1) * 20 : 0) +
-        (payloadMarginG ? clamp(payloadMarginG / Math.max(totalMassG * 0.25, 1), 0, 1) * 18 : 0)
+        (rangeKm ? clamp(rangeKm / 10, 0, 1) * 16 : 0) +
+        (missionDistanceKm > 0 ? clamp((missionReservePercent + 15) / 85, 0, 1) * 8 : 4) +
+        (payloadMarginG ? clamp(payloadMarginG / Math.max(totalMassG * 0.25, 1), 0, 1) * 14 : 0)
     ),
     0,
     100
@@ -782,9 +980,17 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
             ? `${formatMetric(selectedMass.massG, 0)} g from ${selectedMass.source === "estimated" ? "AI mass estimate" : selectedMass.source}`
             : "Mass contribution unavailable",
           selectedNode.data.componentType === "battery"
-            ? `${formatMetric(estimateBattery(selectedNode).usableWh, 1)} Wh usable energy`
+            ? `${formatMetric(estimateBattery(selectedNode).energyWh * (1 - lowBatteryPercent / 100), 1)} Wh before low-battery reserve`
             : selectedNode.data.componentType === "motor"
               ? `${formatMetric(propertyNumber(selectedNode, "thrustGrams", 900), 0)} g max thrust per motor`
+              : selectedNode.data.componentType === "companion-computer"
+                ? `${formatMetric(propertyNumber(selectedNode, "powerWatts", 8), 1)} W avionics load`
+                : selectedNode.data.componentType === "airspeed-sensor"
+                  ? "Improves fixed-wing and wind-test confidence"
+                  : selectedNode.data.componentType === "optical-flow"
+                    ? "Supports GPS-denied local-position scenarios"
+                    : selectedNode.data.componentType === "parachute"
+                      ? "Adds recovery hardware for failsafe test coverage"
               : `${formatMetric(((selectedMass?.massG ?? 0) / Math.max(totalMassG, 1)) * 100, 1)}% of estimated takeoff mass`,
           selectedNode.data.componentType === "frame"
             ? `Layout input: ${String(selectedNode.data.properties.layout ?? settings.frame)}`
@@ -807,6 +1013,11 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
     rangeKm,
     maxSpeedMps,
     payloadMarginG,
+    missionDistanceKm,
+    missionReservePercent,
+    windPenaltyPercent: (windPowerMultiplier - 1) * 100,
+    lowBatteryReserveWh,
+    criticalBatteryReserveWh,
     performanceScore,
     confidence,
     warnings,
@@ -843,7 +1054,13 @@ function SimulationPreview({
   const gps = firstNodeByType(nodes, "gps");
   const compass = firstNodeByType(nodes, "compass");
   const rangefinder = firstNodeByType(nodes, "rangefinder");
+  const airspeed = firstNodeByType(nodes, "airspeed-sensor");
+  const opticalFlow = firstNodeByType(nodes, "optical-flow");
   const telemetry = firstNodeByType(nodes, "telemetry-radio");
+  const companion = firstNodeByType(nodes, "companion-computer");
+  const adsb = firstNodeByType(nodes, "adsb-remote-id");
+  const parachute = firstNodeByType(nodes, "parachute");
+  const buzzer = firstNodeByType(nodes, "buzzer");
   const camera = firstNodeByType(nodes, "camera");
   const gimbal = firstNodeByType(nodes, "gimbal");
   const expectedMotors = expectedMotorCount(settings);
@@ -851,15 +1068,21 @@ function SimulationPreview({
   const frameLayout = String(frame?.data.properties.layout ?? settings.frame);
   const batteryCells = battery?.data.properties.cells;
   const payloads = [camera, gimbal].filter(Boolean);
+  const windLabel =
+    settings.windSpeedMps > 0 || settings.windGustMps > 0 ? `${settings.windSpeedMps}/${settings.windGustMps} m/s` : "Calm";
 
   return (
     <section className="sim-preview">
       <div className="sim-preview-title">
         <span>Vehicle Preview</span>
-        <strong>{settings.vehicle}</strong>
+        <strong>{scenarioLabel(settings.testScenario)}</strong>
       </div>
 
       <div className={`vehicle-visual ${settings.vehicle.toLowerCase()}`}>
+        <div className={`wind-visual ${settings.windSpeedMps > 0 || settings.windGustMps > 0 ? "active" : ""}`} title="Wind / gust">
+          <Wind size={14} />
+          <span>{windLabel}</span>
+        </div>
         <div className="vehicle-axis horizontal" />
         <div className="vehicle-axis vertical" />
         <div className="vehicle-axis diagonal-a" />
@@ -894,7 +1117,13 @@ function SimulationPreview({
         {gps ? <span className="sensor-visual gps">GPS</span> : null}
         {compass ? <span className="sensor-visual compass">MAG</span> : null}
         {rangefinder ? <span className="sensor-visual rangefinder">RNG</span> : null}
+        {airspeed ? <span className="sensor-visual airspeed">AS</span> : null}
+        {opticalFlow ? <span className="sensor-visual optical-flow">FLOW</span> : null}
         {telemetry ? <span className="sensor-visual telemetry">TEL</span> : null}
+        {companion ? <span className="sensor-visual companion">CPU</span> : null}
+        {adsb ? <span className="sensor-visual adsb">ID</span> : null}
+        {parachute ? <span className="safety-visual parachute">CHUTE</span> : null}
+        {buzzer ? <span className="safety-visual buzzer">ALERT</span> : null}
         {payloads.length > 0 ? <span className="payload-visual">PAY</span> : null}
       </div>
 
@@ -917,6 +1146,18 @@ function SimulationPreview({
           <strong>{score}</strong>
           <span>Score</span>
         </div>
+        <div>
+          <strong>{settings.vehicle}</strong>
+          <span>Vehicle</span>
+        </div>
+        <div>
+          <strong>{windLabel}</strong>
+          <span>Wind/Gust</span>
+        </div>
+        <div>
+          <strong>{formatMetric(settings.missionDistanceKm, 1, true)}</strong>
+          <span>Mission km</span>
+        </div>
       </div>
     </section>
   );
@@ -927,7 +1168,9 @@ function PerformancePanel({ estimate }: { estimate: PerformanceEstimate }) {
     { label: "Takeoff Mass", value: formatMetric(estimate.totalMassG / 1000, 2), unit: "kg" },
     { label: "Hover Endurance", value: formatMetric(estimate.hoverEnduranceMin, 1), unit: "min" },
     { label: "Mission Range", value: formatMetric(estimate.rangeKm, 2), unit: "km" },
+    { label: "Mission Reserve", value: Number.isFinite(estimate.missionReservePercent) ? `${Math.round(estimate.missionReservePercent)}` : "--", unit: "%" },
     { label: "Usable Energy", value: formatMetric(estimate.usableEnergyWh, 1), unit: "Wh" },
+    { label: "Wind Penalty", value: formatMetric(estimate.windPenaltyPercent, 0, true), unit: "%" },
     { label: "Thrust / Weight", value: formatMetric(estimate.thrustToWeight, 2), unit: "x" },
     { label: "Hover Throttle", value: estimate.hoverThrottle > 0 ? `${Math.round(estimate.hoverThrottle * 100)}` : "--", unit: "%" },
     { label: "Max Speed", value: formatMetric(estimate.maxSpeedMps, 1), unit: "m/s" },
@@ -986,12 +1229,24 @@ function PerformancePanel({ estimate }: { estimate: PerformanceEstimate }) {
           <strong>{formatMetric(estimate.batteryEnergyWh, 1)} Wh</strong>
         </div>
         <div className="ai-detail-row">
+          <span>Low reserve</span>
+          <strong>{formatMetric(estimate.lowBatteryReserveWh, 1, true)} Wh</strong>
+        </div>
+        <div className="ai-detail-row">
+          <span>Critical reserve</span>
+          <strong>{formatMetric(estimate.criticalBatteryReserveWh, 1, true)} Wh</strong>
+        </div>
+        <div className="ai-detail-row">
           <span>Hover power</span>
           <strong>{formatMetric(estimate.hoverPowerW, 0)} W</strong>
         </div>
         <div className="ai-detail-row">
           <span>Cruise power</span>
           <strong>{formatMetric(estimate.cruisePowerW, 0)} W</strong>
+        </div>
+        <div className="ai-detail-row">
+          <span>Mission distance</span>
+          <strong>{formatMetric(estimate.missionDistanceKm, 2, true)} km</strong>
         </div>
       </section>
 
@@ -1021,11 +1276,15 @@ function App() {
   const [edges, setEdges] = useState<DesignEdge[]>(starterDesign.edges);
   const [settings, setSettings] = useState<SimulationSettings>(starterDesign.settings);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>("fc-1");
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [hoveredConnection, setHoveredConnection] = useState<HoveredConnection | null>(null);
+  const [contextMenu, setContextMenu] = useState<ObjectContextMenu | null>(null);
   const [tab, setTab] = useState<AppTab>("inspector");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [sitlPlan, setSitlPlan] = useState<SitlPlan | null>(null);
+  const [softwareUpdating, setSoftwareUpdating] = useState(false);
   const workspaceFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -1036,16 +1295,41 @@ function App() {
 
   const validation = useMemo(() => validateDesign(nodes, edges, settings), [nodes, edges, settings]);
 
-  const editNode = useCallback(
+  const clearSelection = useCallback(() => {
+    setNodes((currentNodes) => currentNodes.map((node): DesignNode => ({ ...node, selected: false })));
+    setEdges((currentEdges) => currentEdges.map((edge): DesignEdge => ({ ...edge, selected: false })));
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setContextMenu(null);
+  }, []);
+
+  const selectNode = useCallback(
     (nodeId: string) => {
       const node = nodes.find((candidate) => candidate.id === nodeId);
       setNodes((currentNodes) => currentNodes.map((candidate): DesignNode => ({ ...candidate, selected: candidate.id === nodeId })));
+      setEdges((currentEdges) => currentEdges.map((edge): DesignEdge => ({ ...edge, selected: false })));
       setSelectedNodeId(nodeId);
+      setSelectedEdgeId(null);
       setTab("inspector");
       setStatusMessage(node ? `${node.data.label} selected` : "Component selected");
     },
     [nodes]
   );
+
+  const selectEdge = useCallback(
+    (edgeId: string) => {
+      const edge = edges.find((candidate) => candidate.id === edgeId);
+      setEdges((currentEdges) => currentEdges.map((candidate): DesignEdge => ({ ...candidate, selected: candidate.id === edgeId })));
+      setNodes((currentNodes) => currentNodes.map((node): DesignNode => ({ ...node, selected: false })));
+      setSelectedEdgeId(edgeId);
+      setSelectedNodeId(null);
+      setTab("inspector");
+      setStatusMessage(edge ? `${connectionDetails(edge, nodes).label} connection selected` : "Connection selected");
+    },
+    [edges, nodes]
+  );
+
+  const editNode = useCallback((nodeId: string) => selectNode(nodeId), [selectNode]);
 
   const nodeIssueMap = useMemo(() => {
     const map = new Map<string, "error" | "warning" | "ok">();
@@ -1069,13 +1353,14 @@ function App() {
     () =>
       nodes.map((node) => ({
         ...node,
+        selected: node.id === selectedNodeId || node.selected,
         data: {
           ...node.data,
           health: nodeIssueMap.get(node.id) ?? "ok",
           onEdit: () => editNode(node.id)
         }
       })),
-    [editNode, nodeIssueMap, nodes]
+    [editNode, nodeIssueMap, nodes, selectedNodeId]
   );
 
   const edgeIssueMap = useMemo(() => {
@@ -1092,24 +1377,70 @@ function App() {
     return map;
   }, [validation.issues]);
 
+  const edgeIssueMessageMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const issue of validation.issues) {
+      for (const edgeId of issue.edgeIds ?? []) {
+        const messages = map.get(edgeId) ?? [];
+        messages.push(`${issue.title}: ${issue.message}`);
+        map.set(edgeId, messages);
+      }
+    }
+    return map;
+  }, [validation.issues]);
+
   const visibleEdges = useMemo(
     () =>
       edges.map((edge) => {
         const signal = signalForEdge(edge, nodes);
         const issue = edgeIssueMap.get(edge.id);
+        const issueMessages = edgeIssueMessageMap.get(edge.id) ?? [];
         const color = issue === "error" ? "#c83f3f" : issue === "warning" ? "#c56b21" : signal ? signalColors[signal] : "#8ca0a5";
+        const displayEdge = { ...edge, data: { ...edge.data, signal, issues: issueMessages } };
+        const details = connectionDetails(displayEdge, nodes);
         return {
           ...edge,
-          data: { ...edge.data, signal },
+          ariaLabel: connectionTooltip(displayEdge, nodes),
+          data: displayEdge.data,
+          focusable: true,
+          interactionWidth: 26,
+          label: details.label,
+          labelBgBorderRadius: 6,
+          labelBgPadding: [5, 3] as [number, number],
+          labelBgStyle: { fill: issue ? "#fff7ed" : "#ffffff", fillOpacity: 0.94 },
+          labelShowBg: true,
+          labelStyle: { fill: color, fontSize: 10, fontWeight: 900 },
           markerEnd: { type: MarkerType.ArrowClosed, color },
+          reconnectable: true,
+          selectable: true,
+          selected: edge.id === selectedEdgeId || edge.selected,
           style: { ...edge.style, stroke: color },
           className: [signal ? `edge-signal-${signal}` : undefined, issue ? `edge-${issue}` : undefined].filter(Boolean).join(" ") || undefined
         };
       }),
-    [edgeIssueMap, edges, nodes]
+    [edgeIssueMap, edgeIssueMessageMap, edges, nodes, selectedEdgeId]
   );
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  const selectedEdge = selectedEdgeId ? edges.find((edge) => edge.id === selectedEdgeId) ?? null : null;
+  const selectedEdgeDetails = selectedEdge
+    ? connectionDetails(
+        {
+          ...selectedEdge,
+          data: {
+            ...selectedEdge.data,
+            signal: signalForEdge(selectedEdge, nodes),
+            issues: edgeIssueMessageMap.get(selectedEdge.id) ?? []
+          }
+        },
+        nodes
+      )
+    : null;
+  const hoveredEdge = hoveredConnection
+    ? visibleEdges.find((edge) => edge.id === hoveredConnection.edgeId) ?? edges.find((edge) => edge.id === hoveredConnection.edgeId) ?? null
+    : null;
+  const hoveredEdgeDetails = hoveredEdge ? connectionDetails(hoveredEdge, nodes) : null;
+  const hoveredTooltipPosition = hoveredConnection ? anchoredLayerPosition(hoveredConnection, 280, 142, 12) : null;
   const selectedDefinition = selectedNode ? getComponentDefinition(selectedNode.data.componentType) : null;
   const gcsTargets = useMemo(() => targetDefaults(settings), [settings]);
   const buildGuide = useMemo(() => buildGuideFor(nodes, settings), [nodes, settings]);
@@ -1131,10 +1462,11 @@ function App() {
   const onNodesChange = useCallback(
     (changes: NodeChange<DesignNode>[]) => {
       const removedNodeIds: string[] = [];
+      let selectedNodeChange: string | null = null;
 
       for (const change of changes) {
         if (change.type === "select" && change.selected) {
-          setSelectedNodeId(change.id);
+          selectedNodeChange = change.id;
         }
         if (change.type === "remove") {
           removedNodeIds.push(change.id);
@@ -1143,22 +1475,73 @@ function App() {
 
       setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
 
+      if (selectedNodeChange) {
+        setSelectedNodeId(selectedNodeChange);
+        setSelectedEdgeId(null);
+        setEdges((currentEdges) => currentEdges.map((edge): DesignEdge => ({ ...edge, selected: false })));
+        setTab("inspector");
+        setContextMenu(null);
+      }
+
       if (removedNodeIds.length > 0) {
         const removed = new Set(removedNodeIds);
         setEdges((currentEdges) => currentEdges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target)));
         setSelectedNodeId((currentSelectedId) => (currentSelectedId && removed.has(currentSelectedId) ? null : currentSelectedId));
+        setSelectedEdgeId((currentSelectedId) => {
+          const selectedEdgeWasRemoved = currentSelectedId
+            ? edges.some((edge) => edge.id === currentSelectedId && (removed.has(edge.source) || removed.has(edge.target)))
+            : false;
+          return selectedEdgeWasRemoved ? null : currentSelectedId;
+        });
+      }
+    },
+    [edges, setEdges, setNodes]
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange<DesignEdge>[]) => {
+      const removedEdgeIds: string[] = [];
+      let selectedEdgeChange: string | null = null;
+
+      for (const change of changes) {
+        if (change.type === "select" && change.selected) {
+          selectedEdgeChange = change.id;
+        }
+        if (change.type === "remove") {
+          removedEdgeIds.push(change.id);
+        }
+      }
+
+      setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
+
+      if (selectedEdgeChange) {
+        setSelectedEdgeId(selectedEdgeChange);
+        setSelectedNodeId(null);
+        setNodes((currentNodes) => currentNodes.map((node): DesignNode => ({ ...node, selected: false })));
+        setTab("inspector");
+        setContextMenu(null);
+      }
+
+      if (removedEdgeIds.length > 0) {
+        const removed = new Set(removedEdgeIds);
+        setSelectedEdgeId((currentSelectedId) => (currentSelectedId && removed.has(currentSelectedId) ? null : currentSelectedId));
       }
     },
     [setEdges, setNodes]
   );
 
-  const onEdgesChange = useCallback((changes: EdgeChange<DesignEdge>[]) => {
-    setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
-  }, []);
+  const isValidConnection = useCallback((connection: Connection | DesignEdge) => checkPortConnection(connection, nodes).valid, [nodes]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
+      const portCheck = checkPortConnection(connection, nodes);
+      if (!portCheck.valid) {
+        setStatusMessage(portCheck.message);
+        return;
+      }
+
+      if (edges.some((edge) => sameConnection(edge, connection))) {
+        setStatusMessage("Connection already exists");
         return;
       }
 
@@ -1167,6 +1550,7 @@ function App() {
         id: `edge-${crypto.randomUUID()}`,
         type: "smoothstep",
         markerEnd: { type: MarkerType.ArrowClosed },
+        selected: true,
         data: {
           signal: signalForEdge(connection as DesignEdge, nodes)
         }
@@ -1181,8 +1565,68 @@ function App() {
         return;
       }
 
-      setEdges((currentEdges) => addEdge(candidate, currentEdges));
+      setEdges((currentEdges) => addEdge(candidate, currentEdges.map((edge): DesignEdge => ({ ...edge, selected: false }))));
+      setNodes((currentNodes) => currentNodes.map((node): DesignNode => ({ ...node, selected: false })));
+      setSelectedEdgeId(candidate.id);
+      setSelectedNodeId(null);
+      setTab("inspector");
       setStatusMessage("Connection added");
+    },
+    [edges, nodes, settings]
+  );
+
+  const onReconnect = useCallback(
+    (oldEdge: DesignEdge, connection: Connection) => {
+      const portCheck = checkPortConnection(connection, nodes);
+      if (!portCheck.valid) {
+        setStatusMessage(portCheck.message);
+        return;
+      }
+
+      if (edges.some((edge) => edge.id !== oldEdge.id && sameConnection(edge, connection))) {
+        setStatusMessage("Connection already exists");
+        return;
+      }
+
+      const candidate: DesignEdge = {
+        ...oldEdge,
+        source: connection.source,
+        sourceHandle: connection.sourceHandle,
+        target: connection.target,
+        targetHandle: connection.targetHandle,
+        data: {
+          ...oldEdge.data,
+          signal: signalForEdge({ ...oldEdge, ...connection } as DesignEdge, nodes)
+        }
+      };
+      const nextEdges = edges.map((edge) => (edge.id === oldEdge.id ? candidate : edge));
+      const nextValidation = validateDesign(nodes, nextEdges, settings);
+      const blocking = nextValidation.issues.find((issue) => issue.severity === "error" && issue.edgeIds?.includes(oldEdge.id));
+
+      if (blocking) {
+        setStatusMessage(blocking.message);
+        return;
+      }
+
+      setEdges((currentEdges) =>
+        reconnectEdge(oldEdge, connection, currentEdges, { shouldReplaceId: false }).map((edge): DesignEdge =>
+          edge.id === oldEdge.id
+            ? {
+                ...edge,
+                selected: true,
+                data: {
+                  ...edge.data,
+                  signal: signalForEdge(edge, nodes)
+                }
+              }
+            : { ...edge, selected: false }
+        )
+      );
+      setNodes((currentNodes) => currentNodes.map((node): DesignNode => ({ ...node, selected: false })));
+      setSelectedEdgeId(oldEdge.id);
+      setSelectedNodeId(null);
+      setTab("inspector");
+      setStatusMessage("Connection reconnected");
     },
     [edges, nodes, settings]
   );
@@ -1195,6 +1639,8 @@ function App() {
     };
     setNodes((currentNodes) => [...currentNodes.map((currentNode): DesignNode => ({ ...currentNode, selected: false })), node]);
     setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
+    setContextMenu(null);
     setTab("inspector");
     setStatusMessage(`${definition.name} added`);
     window.setTimeout(() => {
@@ -1304,6 +1750,8 @@ function App() {
 
     setNodes((currentNodes) => [...currentNodes.map((node): DesignNode => ({ ...node, selected: false })), duplicate]);
     setSelectedNodeId(duplicate.id);
+    setSelectedEdgeId(null);
+    setContextMenu(null);
     setTab("inspector");
     setStatusMessage("Component duplicated");
     window.setTimeout(() => {
@@ -1318,7 +1766,31 @@ function App() {
     setNodes((currentNodes) => currentNodes.filter((node) => node.id !== selectedNode.id));
     setEdges((currentEdges) => currentEdges.filter((edge) => edge.source !== selectedNode.id && edge.target !== selectedNode.id));
     setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setContextMenu(null);
     setStatusMessage("Component removed");
+  };
+
+  const removeSelectedEdge = () => {
+    if (!selectedEdge) {
+      return;
+    }
+
+    setEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== selectedEdge.id));
+    setSelectedEdgeId(null);
+    setContextMenu(null);
+    setStatusMessage("Connection removed");
+  };
+
+  const focusNodeById = (nodeId: string) => {
+    const node = nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) {
+      return;
+    }
+
+    void fitView({ nodes: [{ id: node.id }], duration: 350, padding: 0.75, maxZoom: 1.05 });
+    setStatusMessage(`${node.data.label} centered`);
+    setContextMenu(null);
   };
 
   const currentDesign = () => designFromState(designName, nodes, edges, settings, designId);
@@ -1330,6 +1802,9 @@ function App() {
     setEdges(design.edges);
     setSettings(settingsWithDefaults(design.settings));
     setSelectedNodeId(design.nodes[0]?.id ?? null);
+    setSelectedEdgeId(null);
+    setHoveredConnection(null);
+    setContextMenu(null);
     setTab("inspector");
     setSitlPlan(null);
     setStatusMessage(message);
@@ -1414,6 +1889,19 @@ function App() {
     setStatusMessage("ArduPilot parameter file exported");
   };
 
+  const handleSoftwareUpdate = async () => {
+    setSoftwareUpdating(true);
+    setStatusMessage("Updating software from Git and compiling...");
+    try {
+      const result = await updateSoftware();
+      setStatusMessage(result.message);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Software update failed");
+    } finally {
+      setSoftwareUpdating(false);
+    }
+  };
+
   const handleLocateSimVehicle = async () => {
     const result = await locateSimVehicle(settings.simVehiclePath);
     setSystemStatus(result);
@@ -1431,6 +1919,107 @@ function App() {
     setSitlPlan(result.plan);
     setStatusMessage(`SITL launched as PID ${result.pid}`);
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const commandKey = event.ctrlKey || event.metaKey;
+
+      if (key === "escape") {
+        event.preventDefault();
+        clearSelection();
+        setStatusMessage("Selection cleared");
+        return;
+      }
+
+      if (isTextEditingTarget(event.target)) {
+        return;
+      }
+
+      if (commandKey && event.shiftKey && key === "s") {
+        event.preventDefault();
+        handleSaveWorkspaceFile();
+        return;
+      }
+
+      if (commandKey && key === "s") {
+        event.preventDefault();
+        void handleSave();
+        return;
+      }
+
+      if (commandKey && key === "o") {
+        event.preventDefault();
+        handleLoadWorkspaceClick();
+        return;
+      }
+
+      if (commandKey && key === "e") {
+        event.preventDefault();
+        handleJsonDownload();
+        return;
+      }
+
+      if (commandKey && key === "d" && selectedNode) {
+        event.preventDefault();
+        duplicateSelectedNode();
+        return;
+      }
+
+      if ((key === "delete" || key === "backspace") && (selectedNode || selectedEdge)) {
+        event.preventDefault();
+        if (selectedEdge) {
+          removeSelectedEdge();
+        } else {
+          removeSelectedNode();
+        }
+        return;
+      }
+
+      if (key === "f" && selectedNode) {
+        event.preventDefault();
+        focusSelectedNode();
+        return;
+      }
+
+      if (selectedNode && ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+        event.preventDefault();
+        const step = event.shiftKey ? 50 : 10;
+        const delta = {
+          x: key === "arrowleft" ? -step : key === "arrowright" ? step : 0,
+          y: key === "arrowup" ? -step : key === "arrowdown" ? step : 0
+        };
+        setNodes((currentNodes) =>
+          currentNodes.map((node) =>
+            node.id === selectedNode.id
+              ? {
+                  ...node,
+                  position: {
+                    x: node.position.x + delta.x,
+                    y: node.position.y + delta.y
+                  }
+                }
+              : node
+          )
+        );
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    clearSelection,
+    duplicateSelectedNode,
+    focusSelectedNode,
+    handleJsonDownload,
+    handleLoadWorkspaceClick,
+    handleSave,
+    handleSaveWorkspaceFile,
+    removeSelectedEdge,
+    removeSelectedNode,
+    selectedEdge,
+    selectedNode
+  ]);
 
   const groupedCatalog = useMemo(() => {
     return filteredCatalog.reduce<Record<string, ComponentDefinition[]>>((groups, component) => {
@@ -1453,15 +2042,47 @@ function App() {
     });
   };
 
+  const contextMenuNode = contextMenu?.kind === "node" ? nodes.find((node) => node.id === contextMenu.nodeId) ?? null : null;
+  const contextMenuEdge = contextMenu?.kind === "edge" ? edges.find((edge) => edge.id === contextMenu.edgeId) ?? null : null;
+  const contextMenuEdgeDetails = contextMenuEdge
+    ? connectionDetails(
+        {
+          ...contextMenuEdge,
+          data: {
+            ...contextMenuEdge.data,
+            signal: signalForEdge(contextMenuEdge, nodes),
+            issues: edgeIssueMessageMap.get(contextMenuEdge.id) ?? []
+          }
+        },
+        nodes
+      )
+    : null;
+
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <PlugZap size={24} />
+          <img className="brand-logo" src="/uas-doctoral-tech-logo.svg" alt="UAS Doctoral Tech logo" />
           <div>
             <h1>ArduPilot UAV Lab</h1>
             <input value={designName} onChange={(event) => setDesignName(event.target.value)} aria-label="Design name" />
             <small className="brand-credit">Design by UAS Doctoral Tech</small>
+            <small className="brand-email">shahzaib.abbas@hotmail.com</small>
+            <span className="brand-links">
+              <a href="https://www.youtube.com/@uasdoctoraltech" target="_blank" rel="noreferrer" title="UAS Doctoral Tech YouTube">
+                <ExternalLink size={10} />
+                YouTube
+              </a>
+              <a
+                href="https://www.udemy.com/course/basic-mission-planner-development-uav-simulation-setup/"
+                target="_blank"
+                rel="noreferrer"
+                title="Mission Planner UAV simulation course"
+              >
+                <ExternalLink size={10} />
+                Udemy
+              </a>
+            </span>
           </div>
         </div>
 
@@ -1476,17 +2097,21 @@ function App() {
         </div>
 
         <div className="top-actions">
-          <button type="button" title="Save" onClick={handleSave}>
+          <button type="button" title="Save (Ctrl+S)" aria-keyshortcuts="Control+S" onClick={handleSave}>
             <Save size={17} />
             <span>Save</span>
           </button>
-          <button type="button" title="Export JSON" onClick={handleJsonDownload}>
+          <button type="button" title="Export JSON (Ctrl+E)" aria-keyshortcuts="Control+E" onClick={handleJsonDownload}>
             <FileJson size={17} />
             <span>JSON</span>
           </button>
           <button type="button" title="Export parameters" onClick={handleParamsDownload}>
             <Download size={17} />
             <span>Params</span>
+          </button>
+          <button type="button" title="Update software from Git and compile" onClick={handleSoftwareUpdate} disabled={softwareUpdating}>
+            <RefreshCw size={17} />
+            <span>{softwareUpdating ? "Updating" : "Update"}</span>
           </button>
         </div>
       </header>
@@ -1568,10 +2193,57 @@ function App() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onReconnect={onReconnect}
+            isValidConnection={isValidConnection}
             onNodeClick={(_, node) => {
-              setSelectedNodeId(node.id);
-              setTab("inspector");
+              selectNode(node.id);
             }}
+            onEdgeClick={(event, edge) => {
+              event.stopPropagation();
+              selectEdge(edge.id);
+            }}
+            onNodeContextMenu={(event, node) => {
+              event.preventDefault();
+              event.stopPropagation();
+              selectNode(node.id);
+              setContextMenu({
+                kind: "node",
+                nodeId: node.id,
+                ...anchoredLayerPosition(event, 224, 178, 4)
+              });
+            }}
+            onEdgeContextMenu={(event, edge) => {
+              event.preventDefault();
+              event.stopPropagation();
+              selectEdge(edge.id);
+              setContextMenu({
+                kind: "edge",
+                edgeId: edge.id,
+                ...anchoredLayerPosition(event, 224, 170, 4)
+              });
+            }}
+            onEdgeMouseEnter={(event, edge) => {
+              setHoveredConnection({ edgeId: edge.id, x: event.clientX, y: event.clientY });
+            }}
+            onEdgeMouseMove={(event, edge) => {
+              setHoveredConnection({ edgeId: edge.id, x: event.clientX, y: event.clientY });
+            }}
+            onEdgeMouseLeave={() => {
+              setHoveredConnection(null);
+            }}
+            onPaneClick={() => {
+              clearSelection();
+            }}
+            onPaneContextMenu={(event) => {
+              event.preventDefault();
+              setContextMenu(null);
+            }}
+            connectionLineType={ConnectionLineType.SmoothStep}
+            connectionLineStyle={{ stroke: "#138a83", strokeWidth: 2.4 }}
+            deleteKeyCode={null}
+            edgesFocusable
+            edgesReconnectable
+            reconnectRadius={14}
             fitView
             minZoom={0.25}
             maxZoom={1.6}
@@ -1594,11 +2266,11 @@ function App() {
                 <RotateCcw size={15} />
                 <span>Reset</span>
               </button>
-              <button type="button" title="Save current space as .saq" onClick={handleSaveWorkspaceFile}>
+              <button type="button" title="Save current space as .saq (Ctrl+Shift+S)" aria-keyshortcuts="Control+Shift+S" onClick={handleSaveWorkspaceFile}>
                 <Save size={15} />
                 <span>Save .saq</span>
               </button>
-              <button type="button" title="Load a .saq workspace" onClick={handleLoadWorkspaceClick}>
+              <button type="button" title="Load a .saq workspace (Ctrl+O)" aria-keyshortcuts="Control+O" onClick={handleLoadWorkspaceClick}>
                 <FolderOpen size={15} />
                 <span>Load</span>
               </button>
@@ -1611,6 +2283,70 @@ function App() {
               />
             </Panel>
           </ReactFlow>
+
+          {hoveredEdgeDetails && hoveredTooltipPosition ? (
+            <div className="connection-tooltip" style={{ left: hoveredTooltipPosition.x, top: hoveredTooltipPosition.y }}>
+              <strong>{hoveredEdgeDetails.title}</strong>
+              <span>{hoveredEdgeDetails.route}</span>
+              <small>
+                {hoveredEdgeDetails.sourceDetail}
+                {" -> "}
+                {hoveredEdgeDetails.targetDetail}
+              </small>
+              {hoveredEdgeDetails.issues.length > 0 ? <em>{hoveredEdgeDetails.issues[0]}</em> : null}
+            </div>
+          ) : null}
+
+          {contextMenu && (contextMenuNode || contextMenuEdgeDetails) ? (
+            <div
+              className="object-context-menu"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onClick={(event) => event.stopPropagation()}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              {contextMenu.kind === "node" && contextMenuNode ? (
+                <>
+                  <div className="context-menu-title">
+                    <strong>{contextMenuNode.data.label}</strong>
+                    <small>{getComponentDefinition(contextMenuNode.data.componentType).name}</small>
+                  </div>
+                  <button type="button" onClick={() => focusNodeById(contextMenuNode.id)}>
+                    <Search size={15} />
+                    <span>Center</span>
+                  </button>
+                  <button type="button" onClick={duplicateSelectedNode}>
+                    <Copy size={15} />
+                    <span>Duplicate</span>
+                  </button>
+                  <button className="danger" type="button" onClick={removeSelectedNode}>
+                    <Trash2 size={15} />
+                    <span>Remove</span>
+                  </button>
+                </>
+              ) : null}
+
+              {contextMenu.kind === "edge" && contextMenuEdge && contextMenuEdgeDetails ? (
+                <>
+                  <div className="context-menu-title">
+                    <strong>{contextMenuEdgeDetails.label} connection</strong>
+                    <small>{contextMenuEdgeDetails.title}</small>
+                  </div>
+                  <button type="button" onClick={() => focusNodeById(contextMenuEdge.source)}>
+                    <Search size={15} />
+                    <span>Source</span>
+                  </button>
+                  <button type="button" onClick={() => focusNodeById(contextMenuEdge.target)}>
+                    <Link2 size={15} />
+                    <span>Target</span>
+                  </button>
+                  <button className="danger" type="button" onClick={removeSelectedEdge}>
+                    <Trash2 size={15} />
+                    <span>Remove</span>
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         <aside className="detail-panel">
@@ -1647,11 +2383,64 @@ function App() {
 
           {tab === "inspector" && (
             <div className="detail-content">
-              {selectedNode && selectedDefinition ? (
+              {selectedEdge && selectedEdgeDetails ? (
+                <>
+                  <div className="panel-title">
+                    <span>{selectedEdgeDetails.label} Connection</span>
+                    <button className="icon-button danger" type="button" title="Remove connection (Del)" aria-keyshortcuts="Delete" onClick={removeSelectedEdge}>
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+
+                  <section className="connection-editor">
+                    <h2>Route</h2>
+                    <div className="connection-route-card">
+                      <strong>{selectedEdgeDetails.title}</strong>
+                      <span>{selectedEdgeDetails.route}</span>
+                      <small>
+                        {selectedEdgeDetails.sourceDetail}
+                        {" -> "}
+                        {selectedEdgeDetails.targetDetail}
+                      </small>
+                    </div>
+                    <div className="object-action-row">
+                      <button className="icon-button" type="button" title="Center source" onClick={() => focusNodeById(selectedEdge.source)}>
+                        <Search size={16} />
+                      </button>
+                      <button className="icon-button" type="button" title="Center target" onClick={() => focusNodeById(selectedEdge.target)}>
+                        <Link2 size={16} />
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="ports-list">
+                    <h2>Endpoints</h2>
+                    <div className="port-row">
+                      <span className={`port-dot ${selectedEdgeDetails.signal ?? "mount"}`} />
+                      <span>{selectedEdgeDetails.sourceName}</span>
+                      <small>{selectedEdgeDetails.sourcePortName}</small>
+                    </div>
+                    <div className="port-row">
+                      <span className={`port-dot ${selectedEdgeDetails.signal ?? "mount"}`} />
+                      <span>{selectedEdgeDetails.targetName}</span>
+                      <small>{selectedEdgeDetails.targetPortName}</small>
+                    </div>
+                  </section>
+
+                  {selectedEdgeDetails.issues.length > 0 ? (
+                    <section className="connection-issues">
+                      <h2>Issues</h2>
+                      {selectedEdgeDetails.issues.map((issue) => (
+                        <p key={issue}>{issue}</p>
+                      ))}
+                    </section>
+                  ) : null}
+                </>
+              ) : selectedNode && selectedDefinition ? (
                 <>
                   <div className="panel-title">
                     <span>{selectedDefinition.name}</span>
-                    <button className="icon-button danger" type="button" title="Remove component" onClick={removeSelectedNode}>
+                    <button className="icon-button danger" type="button" title="Remove component (Del)" aria-keyshortcuts="Delete" onClick={removeSelectedNode}>
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -1684,10 +2473,10 @@ function App() {
                       </label>
                     </div>
                     <div className="object-action-row">
-                      <button className="icon-button" type="button" title="Center object" onClick={focusSelectedNode}>
+                      <button className="icon-button" type="button" title="Center object (F)" aria-keyshortcuts="F" onClick={focusSelectedNode}>
                         <Search size={16} />
                       </button>
-                      <button className="icon-button" type="button" title="Duplicate object" onClick={duplicateSelectedNode}>
+                      <button className="icon-button" type="button" title="Duplicate object (Ctrl+D)" aria-keyshortcuts="Control+D" onClick={duplicateSelectedNode}>
                         <Copy size={16} />
                       </button>
                     </div>
@@ -1732,7 +2521,7 @@ function App() {
                   </section>
                 </>
               ) : (
-                <div className="empty-state">Select a component</div>
+                <div className="empty-state">Select a component or connection</div>
               )}
             </div>
           )}
@@ -1756,8 +2545,9 @@ function App() {
                       key={issue.id}
                       onClick={() => {
                         if (issue.nodeIds?.[0]) {
-                          setSelectedNodeId(issue.nodeIds[0]);
-                          setTab("inspector");
+                          selectNode(issue.nodeIds[0]);
+                        } else if (issue.edgeIds?.[0]) {
+                          selectEdge(issue.edgeIds[0]);
                         }
                       }}
                     >
@@ -1843,6 +2633,130 @@ function App() {
                   onChange={(event) => setSettings({ ...settings, speedup: Number(event.target.value) })}
                 />
               </label>
+
+              <section className="mission-test">
+                <h2>Mission Test</h2>
+                <label className="field">
+                  <span>Scenario</span>
+                  <select
+                    value={settings.testScenario}
+                    onChange={(event) =>
+                      setSettings({ ...settings, testScenario: event.target.value as SimulationSettings["testScenario"] })
+                    }
+                  >
+                    <option value="nominal">Nominal</option>
+                    <option value="wind-gust">Wind gust</option>
+                    <option value="low-battery">Low battery</option>
+                    <option value="gps-denied">GPS denied</option>
+                    <option value="payload-endurance">Payload endurance</option>
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>
+                    Mission distance
+                    <small>km</small>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1000}
+                    step={0.1}
+                    value={settings.missionDistanceKm}
+                    onChange={(event) => setSettings({ ...settings, missionDistanceKm: Number(event.target.value) })}
+                  />
+                </label>
+
+                <div className="environment-grid">
+                  <label className="field">
+                    <span>
+                      Wind
+                      <small>m/s</small>
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={60}
+                      step={0.5}
+                      value={settings.windSpeedMps}
+                      onChange={(event) => setSettings({ ...settings, windSpeedMps: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>
+                      Gust
+                      <small>m/s</small>
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={80}
+                      step={0.5}
+                      value={settings.windGustMps}
+                      onChange={(event) => setSettings({ ...settings, windGustMps: Number(event.target.value) })}
+                    />
+                  </label>
+                </div>
+
+                <div className="failsafe-grid">
+                  <label className="field">
+                    <span>
+                      Low reserve
+                      <small>%</small>
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={80}
+                      value={settings.batteryLowPercent}
+                      onChange={(event) => setSettings({ ...settings, batteryLowPercent: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>
+                      Critical reserve
+                      <small>%</small>
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={79}
+                      value={settings.batteryCriticalPercent}
+                      onChange={(event) => setSettings({ ...settings, batteryCriticalPercent: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Low action</span>
+                    <select
+                      value={settings.batteryFailsafeAction}
+                      onChange={(event) =>
+                        setSettings({ ...settings, batteryFailsafeAction: event.target.value as SimulationSettings["batteryFailsafeAction"] })
+                      }
+                    >
+                      <option value="Warn">Warn</option>
+                      <option value="Land">Land</option>
+                      <option value="RTL">RTL</option>
+                      <option value="SmartRTL">SmartRTL</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Critical action</span>
+                    <select
+                      value={settings.batteryCriticalAction}
+                      onChange={(event) =>
+                        setSettings({ ...settings, batteryCriticalAction: event.target.value as SimulationSettings["batteryCriticalAction"] })
+                      }
+                    >
+                      <option value="Land">Land</option>
+                      <option value="RTL">RTL</option>
+                      <option value="SmartRTL">SmartRTL</option>
+                      <option value="Terminate">Terminate</option>
+                    </select>
+                  </label>
+                </div>
+
+                <p className="scenario-note">{scenarioHint(settings)}</p>
+              </section>
 
               <section className="gcs-targets">
                 <h2>Ground Stations</h2>
