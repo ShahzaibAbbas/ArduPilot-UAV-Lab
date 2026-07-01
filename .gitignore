@@ -2,8 +2,13 @@ node_modules/
 dist/
 data/
 backups/
+github uploading/
+Updates/
 .env
 .env.*
+!.env.example
 .DS_Store
 *.log
 *.zip
+coverage/
+.vite/

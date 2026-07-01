@@ -16,10 +16,11 @@ A local design-and-simulation workspace for assembling UAV components, validatin
 - Persistent custom component templates saved under `data/library/`.
 - ArduPilot `.param` starter export from the selected components, including two-layer battery failsafe thresholds/actions and starter params for airspeed, optical flow, and parachute components.
 - SITL command planning for native SITL frames, multi-vehicle swarm counts/layout metadata, and the ArduPilot JSON physics backend.
-- MAVLink UDP telemetry reader with a live status panel for heartbeat, battery, GPS, attitude, VFR HUD, and status text messages.
+- MAVLink UDP telemetry reader with live command/control actions for arm, disarm, takeoff, mode changes, RTL, land, and custom `COMMAND_LONG` messages.
 - In-app Logs panel backed by `data/logs/server.log` for API, terminal, maintenance, and SITL lifecycle events.
 - In-app workspace Terminal panel for local diagnostics and simulator commands.
-- Scenario exports for QGC waypoint missions, pre-arm test checklists, JSON physics bridge process templates, and Gazebo world/plugin files for wind and sensor-failure tests.
+- Scenario exports for QGC waypoint missions, pre-arm test checklists, JSON physics bridge process templates, Gazebo world/plugin files, and ZIP simulator bundles.
+- Direct Gazebo plugin helpers that detect supported local installs, generate a CMake plugin project, and compile it when CMake, pkg-config, a C++ compiler, and Gazebo development packages are available.
 - In-app software update button for Git checkouts. It runs `git pull --ff-only`, `npm install`, and `npm run build`.
 
 Contact: shahzaib.abbas@hotmail.com
@@ -86,6 +87,10 @@ Use the canvas toolbar to create a new empty space, reset to the starter workspa
 
 Saved workspace files use the `.saq` extension. The file is JSON with a small format header and the current design payload, including components, links, settings, and product specifications.
 
+## Upload rules
+
+Before preparing a GitHub upload or deleting generated files, follow `UPLOAD_RULES.md`. It defines the local-only `github uploading/` staging folder and the ZIP backup workflow.
+
 ## UI study
 
 The FHD operations layout was guided by the Open Design local-first studio model:
@@ -118,6 +123,10 @@ On Windows, ArduPilot SITL is commonly run under Linux or WSL2. If SITL is not i
 server/
   index.js       Express API
   sitl.js        SITL detection, command generation, param export
+  telemetry.js   MAVLink telemetry parsing and command dispatch
+  artifacts.js   Scenario files, Gazebo plugin helpers, bundle export
+  gazebo.js      Gazebo install detection and plugin compilation
+  zip.js         No-dependency ZIP archive writer
   designStore.js
 src/
   App.tsx        Main design environment
@@ -127,6 +136,5 @@ src/
 
 ## Next build targets
 
-- Full MAVLink command/control actions from the live panel.
-- Zip packaging for multi-file simulator export bundles.
-- Direct Gazebo plugin compilation helpers for supported simulator installs.
+- Live mission upload/download flows from the telemetry panel.
+- Simulator-specific sensor topic adapters for deeper Gazebo failure injection.
