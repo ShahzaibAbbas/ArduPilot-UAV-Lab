@@ -132,6 +132,63 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function integerValue(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : fallback;
+}
+
+export function buildSwarmLayout(settings = {}) {
+  const count = clamp(integerValue(settings.swarmCount, 1), 1, 32);
+  const spacing = clamp(numberValue(settings.swarmSpacingM, 20), 1, 500);
+  const layout = ["line", "grid", "circle"].includes(settings.swarmLayout) ? settings.swarmLayout : "line";
+  const vehicles = [];
+
+  if (layout === "grid") {
+    const columns = Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / columns);
+    for (let index = 0; index < count; index += 1) {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      vehicles.push({
+        index: index + 1,
+        sysid: index + 1,
+        x: Math.round((column - (columns - 1) / 2) * spacing * 100) / 100,
+        y: Math.round((row - (rows - 1) / 2) * spacing * 100) / 100,
+        heading: 0
+      });
+    }
+  } else if (layout === "circle") {
+    const radius = Math.max(spacing, (spacing * count) / (2 * Math.PI));
+    for (let index = 0; index < count; index += 1) {
+      const angle = (index / count) * Math.PI * 2;
+      vehicles.push({
+        index: index + 1,
+        sysid: index + 1,
+        x: Math.round(Math.cos(angle) * radius * 100) / 100,
+        y: Math.round(Math.sin(angle) * radius * 100) / 100,
+        heading: Math.round((angle * 180) / Math.PI)
+      });
+    }
+  } else {
+    for (let index = 0; index < count; index += 1) {
+      vehicles.push({
+        index: index + 1,
+        sysid: index + 1,
+        x: Math.round((index - (count - 1) / 2) * spacing * 100) / 100,
+        y: 0,
+        heading: 0
+      });
+    }
+  }
+
+  return {
+    count,
+    layout,
+    spacingM: spacing,
+    vehicles
+  };
+}
+
 function failsafeActionValue(action) {
   const normalized = String(action || "").toLowerCase();
   if (normalized === "land") return 1;
@@ -294,6 +351,7 @@ export async function buildSitlPlan(design) {
   const paramFile = await writeParamFile(design);
   const launcher = launcherFor(detection.path);
   const outputs = gcsOutputs(settings);
+  const swarm = buildSwarmLayout(settings);
 
   const args = [
     ...launcher.prefixArgs,
@@ -306,6 +364,10 @@ export async function buildSitlPlan(design) {
     `--add-param-file=${paramFile.path}`,
     ...outputs.map((output) => `--out=udp:${output.host}:${output.port}`)
   ];
+
+  if (swarm.count > 1) {
+    args.push(`--count=${swarm.count}`, "--auto-sysid");
+  }
 
   if (settings.speedup && Number(settings.speedup) > 1) {
     args.push(`--speedup=${Number(settings.speedup)}`);
@@ -343,6 +405,16 @@ export async function buildSitlPlan(design) {
     notes.push("For GPS-denied testing, disable or degrade GPS in the simulator and verify optical-flow/rangefinder coverage in validation.");
   }
 
+  if (settings.testScenario === "sensor-failure") {
+    notes.push("Sensor-failure scenario selected. Use the Gazebo export to script GPS, compass, or rangefinder degradation.");
+  }
+
+  if (swarm.count > 1) {
+    notes.push(
+      `Swarm layout ${swarm.layout} with ${swarm.count} vehicles at ${swarm.spacingM} m spacing. SITL receives --count and --auto-sysid; use the layout table for external physics or Gazebo offsets.`
+    );
+  }
+
   if (!detection.available) {
     notes.push("The command is generated, but the app cannot launch it until sim_vehicle.py is available.");
   }
@@ -361,6 +433,7 @@ export async function buildSitlPlan(design) {
     cwd,
     paramFile: paramFile.path,
     outputs,
+    swarm,
     notes
   };
 }

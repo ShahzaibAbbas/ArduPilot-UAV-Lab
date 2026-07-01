@@ -48,11 +48,13 @@ import {
   Rotate3D,
   Save,
   ScanLine,
+  ScrollText,
   Search,
   Settings,
   ShieldCheck,
   Siren,
   Sparkles,
+  Terminal,
   Trash2,
   Wind,
   Zap,
@@ -72,15 +74,33 @@ import {
 import { createStarterDesign } from "./domain/starterDesign";
 import { expectedMotorCount, validateDesign } from "./domain/validators";
 import {
+  buildGazeboWorldFile,
+  buildJsonBridgeFile,
+  buildMissionFile,
   buildParamFile,
+  buildPrearmFile,
   buildSitlPlan,
+  clearLogs,
+  deleteCustomComponent,
+  getLogs,
+  getTelemetryStatus,
   getSystemStatus,
   launchSitl,
+  listCustomComponents,
   locateSimVehicle,
   saveDesign,
+  saveCustomComponent,
+  runTerminalCommand,
+  startTelemetryListener,
+  stopTelemetryListener,
   updateSoftware,
+  type AppLogEntry,
+  type ArtifactResult,
+  type CustomComponentTemplate,
   type SitlPlan,
-  type SystemStatus
+  type SystemStatus,
+  type TerminalResult,
+  type TelemetryStatus
 } from "./lib/api";
 
 const iconMap = {
@@ -105,7 +125,7 @@ const iconMap = {
   Frame: Boxes
 };
 
-type AppTab = "inspector" | "validation" | "simulation" | "performance";
+type AppTab = "inspector" | "validation" | "simulation" | "telemetry" | "logs" | "terminal" | "performance";
 type ObjectContextMenu =
   | { kind: "node"; nodeId: string; x: number; y: number }
   | { kind: "edge"; edgeId: string; x: number; y: number };
@@ -159,6 +179,52 @@ function downloadText(fileName: string, content: string, mimeType: string) {
   anchor.download = fileName;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadArtifact(artifact: ArtifactResult) {
+  downloadText(artifact.fileName, artifact.content, artifact.mimeType);
+}
+
+function distanceKmBetween(left: { lat: number; lon: number }, right: { lat: number; lon: number }) {
+  const earthRadiusKm = 6371;
+  const latA = (left.lat * Math.PI) / 180;
+  const latB = (right.lat * Math.PI) / 180;
+  const deltaLat = ((right.lat - left.lat) * Math.PI) / 180;
+  const deltaLon = ((right.lon - left.lon) * Math.PI) / 180;
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(latA) * Math.cos(latB) * Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function missionDistanceFromText(content: string) {
+  const waypoints: Array<{ lat: number; lon: number }> = [];
+  const lines = content.split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("QGC") || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const columns = trimmed.split(/\s+/);
+    if (columns.length < 11) {
+      continue;
+    }
+
+    const command = Number(columns[3]);
+    const lat = Number(columns[8]);
+    const lon = Number(columns[9]);
+    if ([16, 22, 82].includes(command) && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+      waypoints.push({ lat, lon });
+    }
+  }
+
+  if (waypoints.length < 2) {
+    return 0;
+  }
+
+  return waypoints.slice(1).reduce((sum, waypoint, index) => sum + distanceKmBetween(waypoints[index], waypoint), 0);
 }
 
 function designFromState(
@@ -297,6 +363,18 @@ function nodesByType(nodes: DesignNode[], type: string) {
 
 function firstNodeByType(nodes: DesignNode[], type: string) {
   return nodes.find((node) => node.data.componentType === type);
+}
+
+function customComponentSummary(component: CustomComponentTemplate) {
+  if (component.summary) {
+    return component.summary;
+  }
+
+  try {
+    return getComponentDefinition(component.baseType).name;
+  } catch {
+    return component.baseType;
+  }
 }
 
 function estimatedNodeHeight(componentType: string) {
@@ -816,6 +894,7 @@ function scenarioLabel(scenario: SimulationSettings["testScenario"]) {
     "low-battery": "Low Battery",
     nominal: "Nominal",
     "payload-endurance": "Payload Endurance",
+    "sensor-failure": "Sensor Failure",
     "wind-gust": "Wind Gust"
   };
   return labels[scenario];
@@ -833,6 +912,9 @@ function scenarioHint(settings: SimulationSettings) {
   }
   if (settings.testScenario === "payload-endurance") {
     return "Emphasizes mission range reserve and avionics/payload energy draw.";
+  }
+  if (settings.testScenario === "sensor-failure") {
+    return "Exports Gazebo sensor-degradation settings for GPS, compass, and rangefinder failure rehearsal.";
   }
   return "Baseline configuration for normal SITL launch and component validation.";
 }
@@ -1267,6 +1349,235 @@ function PerformancePanel({ estimate }: { estimate: PerformanceEstimate }) {
   );
 }
 
+function TelemetryPanel({
+  status,
+  port,
+  onPortChange,
+  onStart,
+  onStop
+}: {
+  status: TelemetryStatus | null;
+  port: number;
+  onPortChange: (port: number) => void;
+  onStart: () => void;
+  onStop: () => void;
+}) {
+  const listener = status?.listener;
+  const vehicles = status?.vehicles ?? [];
+
+  return (
+    <div className="detail-content">
+      <div className="panel-title">
+        <span>MAVLink Telemetry</span>
+        <span className={`status-pill ${listener?.active ? "good" : "neutral"}`}>{listener?.active ? "Listening" : "Stopped"}</span>
+      </div>
+
+      <section className="telemetry-listener">
+        <h2>UDP Reader</h2>
+        <div className="path-row">
+          <input
+            type="number"
+            min={1024}
+            max={65535}
+            value={port}
+            onChange={(event) => onPortChange(Number(event.target.value))}
+            aria-label="MAVLink UDP port"
+          />
+          <button type="button" title={listener?.active ? "Stop telemetry reader" : "Start telemetry reader"} onClick={listener?.active ? onStop : onStart}>
+            {listener?.active ? <Trash2 size={16} /> : <Play size={16} />}
+          </button>
+        </div>
+        <div className="telemetry-stats">
+          <div>
+            <strong>{listener?.packetCount ?? 0}</strong>
+            <span>Packets</span>
+          </div>
+          <div>
+            <strong>{vehicles.length}</strong>
+            <span>Vehicles</span>
+          </div>
+          <div>
+            <strong>{listener?.lastPacketAt ? new Date(listener.lastPacketAt).toLocaleTimeString() : "--"}</strong>
+            <span>Last packet</span>
+          </div>
+        </div>
+        {listener?.error ? <p className="scenario-note">{listener.error}</p> : null}
+      </section>
+
+      <section className="telemetry-vehicles">
+        <h2>Live Vehicles</h2>
+        {vehicles.length === 0 ? (
+          <div className="empty-state">No MAVLink packets yet</div>
+        ) : (
+          vehicles.map((vehicle) => {
+            const gps = vehicle.position ?? vehicle.gps;
+            return (
+              <div className="telemetry-card" key={vehicle.id}>
+                <div className="telemetry-card-title">
+                  <strong>SYS {vehicle.sysid}</strong>
+                  <span className={`status-pill ${vehicle.heartbeat?.armed ? "bad" : "neutral"}`}>
+                    {vehicle.heartbeat?.armed ? "Armed" : "Disarmed"}
+                  </span>
+                </div>
+                <div className="ai-detail-row">
+                  <span>Status</span>
+                  <strong>{vehicle.heartbeat?.systemStatusName ?? "Receiving"}</strong>
+                </div>
+                <div className="ai-detail-row">
+                  <span>Vehicle</span>
+                  <strong>{vehicle.heartbeat?.typeName ?? `Component ${vehicle.compid}`}</strong>
+                </div>
+                <div className="telemetry-grid">
+                  <div>
+                    <span>Battery</span>
+                    <strong>
+                      {vehicle.battery?.voltageV ? formatMetric(vehicle.battery.voltageV, 1) : "--"}
+                      <small>V</small>
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Remain</span>
+                    <strong>
+                      {typeof vehicle.battery?.remainingPercent === "number" ? vehicle.battery.remainingPercent : "--"}
+                      <small>%</small>
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Alt</span>
+                    <strong>
+                      {typeof gps?.altM === "number" ? formatMetric(gps.altM, 1, true) : "--"}
+                      <small>m</small>
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Speed</span>
+                    <strong>
+                      {typeof vehicle.vfrHud?.groundspeedMps === "number"
+                        ? formatMetric(vehicle.vfrHud.groundspeedMps, 1, true)
+                        : typeof vehicle.gps?.groundSpeedMps === "number"
+                          ? formatMetric(vehicle.gps.groundSpeedMps, 1, true)
+                          : "--"}
+                      <small>m/s</small>
+                    </strong>
+                  </div>
+                </div>
+                {gps?.lat && gps.lon ? (
+                  <p>
+                    {gps.lat.toFixed(6)}, {gps.lon.toFixed(6)}
+                  </p>
+                ) : null}
+                {vehicle.statusText?.text ? <p className="telemetry-status-text">{vehicle.statusText.text}</p> : null}
+              </div>
+            );
+          })
+        )}
+      </section>
+    </div>
+  );
+}
+
+function LogsPanel({
+  logs,
+  onRefresh,
+  onClear
+}: {
+  logs: AppLogEntry[];
+  onRefresh: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="detail-content">
+      <div className="panel-title">
+        <span>Logs</span>
+        <span className="panel-actions">
+          <button className="icon-button" type="button" title="Refresh logs" onClick={onRefresh}>
+            <RefreshCw size={16} />
+          </button>
+          <button className="icon-button danger" type="button" title="Clear logs" onClick={onClear}>
+            <Trash2 size={16} />
+          </button>
+        </span>
+      </div>
+
+      <section className="log-list">
+        {logs.length === 0 ? (
+          <div className="empty-state">No logs</div>
+        ) : (
+          logs.map((entry) => (
+            <article className={`log-entry ${entry.level}`} key={entry.id}>
+              <div>
+                <strong>{entry.source}</strong>
+                <span>{new Date(entry.ts).toLocaleTimeString()}</span>
+              </div>
+              <p>{entry.message}</p>
+              {entry.meta ? <code>{JSON.stringify(entry.meta)}</code> : null}
+            </article>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
+function TerminalPanel({
+  command,
+  history,
+  running,
+  onCommandChange,
+  onRun
+}: {
+  command: string;
+  history: TerminalResult[];
+  running: boolean;
+  onCommandChange: (command: string) => void;
+  onRun: () => void;
+}) {
+  return (
+    <div className="detail-content">
+      <div className="panel-title">
+        <span>Terminal</span>
+        <span className={`status-pill ${running ? "neutral" : "good"}`}>{running ? "Running" : "Ready"}</span>
+      </div>
+
+      <form
+        className="terminal-runner"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRun();
+        }}
+      >
+        <label className="field">
+          <span>Command</span>
+          <input value={command} onChange={(event) => onCommandChange(event.target.value)} placeholder="npm run build" />
+        </label>
+        <button type="submit" disabled={running || !command.trim()}>
+          <Terminal size={16} />
+          <span>Run</span>
+        </button>
+      </form>
+
+      <section className="terminal-history">
+        {history.length === 0 ? (
+          <div className="empty-state">No commands</div>
+        ) : (
+          history.map((result, index) => (
+            <article className={`terminal-result ${result.exitCode === 0 ? "ok" : "bad"}`} key={`${result.command}-${index}`}>
+              <div className="terminal-result-title">
+                <strong>{result.command}</strong>
+                <span>
+                  exit {result.exitCode ?? "--"} / {Math.round(result.durationMs)} ms
+                </span>
+              </div>
+              {result.stdout ? <pre>{result.stdout}</pre> : null}
+              {result.stderr ? <pre className="stderr">{result.stderr}</pre> : null}
+            </article>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const { fitView } = useReactFlow<DesignNode, DesignEdge>();
   const starterDesign = useMemo(() => createStarterDesign(), []);
@@ -1284,13 +1595,62 @@ function App() {
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [sitlPlan, setSitlPlan] = useState<SitlPlan | null>(null);
+  const [telemetryStatus, setTelemetryStatus] = useState<TelemetryStatus | null>(null);
+  const [telemetryPort, setTelemetryPort] = useState(14552);
+  const [customComponents, setCustomComponents] = useState<CustomComponentTemplate[]>([]);
+  const [logs, setLogs] = useState<AppLogEntry[]>([]);
+  const [terminalCommand, setTerminalCommand] = useState("npm run build");
+  const [terminalHistory, setTerminalHistory] = useState<TerminalResult[]>([]);
+  const [terminalRunning, setTerminalRunning] = useState(false);
   const [softwareUpdating, setSoftwareUpdating] = useState(false);
   const workspaceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const missionFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     getSystemStatus()
       .then(setSystemStatus)
       .catch((error: Error) => setStatusMessage(error.message));
+  }, []);
+
+  useEffect(() => {
+    listCustomComponents()
+      .then((result) => setCustomComponents(result.components))
+      .catch((error: Error) => setStatusMessage(error.message));
+  }, []);
+
+  const refreshLogs = useCallback(() => {
+    getLogs(250)
+      .then((result) => setLogs(result.logs))
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    refreshLogs();
+    const interval = window.setInterval(refreshLogs, 3000);
+    return () => window.clearInterval(interval);
+  }, [refreshLogs]);
+
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => {
+      getTelemetryStatus()
+        .then((status) => {
+          if (!mounted) {
+            return;
+          }
+          setTelemetryStatus(status);
+          if (status.listener.active) {
+            setTelemetryPort(status.listener.port);
+          }
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 2000);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
   }, []);
 
   const validation = useMemo(() => validateDesign(nodes, edges, settings), [nodes, edges, settings]);
@@ -1458,6 +1818,19 @@ function App() {
         component.summary.toLowerCase().includes(query)
     );
   }, [catalogQuery]);
+
+  const filteredCustomComponents = useMemo(() => {
+    const query = catalogQuery.trim().toLowerCase();
+    if (!query) {
+      return customComponents;
+    }
+    return customComponents.filter(
+      (component) =>
+        component.name.toLowerCase().includes(query) ||
+        component.baseType.toLowerCase().includes(query) ||
+        String(component.summary ?? "").toLowerCase().includes(query)
+    );
+  }, [catalogQuery, customComponents]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<DesignNode>[]) => {
@@ -1646,6 +2019,75 @@ function App() {
     window.setTimeout(() => {
       void fitView({ nodes: [{ id: node.id }], duration: 450, padding: 0.75, maxZoom: 1.05 });
     }, 50);
+  };
+
+  const addCustomComponent = (template: CustomComponentTemplate) => {
+    let definition: ComponentDefinition;
+    try {
+      definition = getComponentDefinition(template.baseType);
+    } catch {
+      setStatusMessage(`${template.name} uses a component type that is no longer available`);
+      return;
+    }
+
+    const node: DesignNode = {
+      ...createComponentNode(definition.type, nodes.length),
+      position: findOpenNodePosition(nodes, definition.type),
+      selected: true,
+      data: {
+        componentType: definition.type,
+        label: template.name,
+        properties: {
+          ...defaultPropertiesForComponent(definition.type),
+          ...template.properties
+        }
+      }
+    };
+
+    setNodes((currentNodes) => [...currentNodes.map((currentNode): DesignNode => ({ ...currentNode, selected: false })), node]);
+    setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
+    setContextMenu(null);
+    setTab("inspector");
+    setStatusMessage(`${template.name} added`);
+    window.setTimeout(() => {
+      void fitView({ nodes: [{ id: node.id }], duration: 450, padding: 0.75, maxZoom: 1.05 });
+    }, 50);
+  };
+
+  const handleSaveSelectedAsCustom = async () => {
+    if (!selectedNode || !selectedDefinition) {
+      setStatusMessage("Select a component before saving to the library");
+      return;
+    }
+
+    try {
+      const result = await saveCustomComponent({
+        name: selectedNode.data.label,
+        baseType: selectedNode.data.componentType,
+        category: selectedDefinition.category,
+        summary: `Saved ${selectedDefinition.name} template`,
+        properties: selectedNode.data.properties
+      });
+      setCustomComponents((current) => [result.component, ...current.filter((component) => component.id !== result.component.id)]);
+      setStatusMessage(`${result.component.name} saved to custom library`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not save custom component");
+    }
+  };
+
+  const handleDeleteCustomComponent = async (component: CustomComponentTemplate) => {
+    if (!component.id) {
+      return;
+    }
+
+    try {
+      await deleteCustomComponent(component.id);
+      setCustomComponents((current) => current.filter((entry) => entry.id !== component.id));
+      setStatusMessage(`${component.name} removed from custom library`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not remove custom component");
+    }
   };
 
   const addGuideComponent = () => {
@@ -1887,6 +2329,93 @@ function App() {
     const result = await buildParamFile(currentDesign());
     downloadText(result.fileName, result.content, "text/plain");
     setStatusMessage("ArduPilot parameter file exported");
+  };
+
+  const handleArtifactDownload = async (builder: (design: UavDesign) => Promise<ArtifactResult>, message: string) => {
+    try {
+      downloadArtifact(await builder(currentDesign()));
+      setStatusMessage(message);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Export failed");
+    }
+  };
+
+  const handleMissionImportClick = () => {
+    missionFileInputRef.current?.click();
+  };
+
+  const handleMissionFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    try {
+      const content = await file.text();
+      const distanceKm = missionDistanceFromText(content);
+      if (distanceKm <= 0) {
+        throw new Error("No QGC waypoint distance could be read from the selected mission.");
+      }
+      setSettings((currentSettings) => ({
+        ...currentSettings,
+        missionDistanceKm: Math.round(distanceKm * 100) / 100
+      }));
+      setStatusMessage(`${file.name} imported, mission distance set to ${distanceKm.toFixed(2)} km`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not import mission");
+    }
+  };
+
+  const handleStartTelemetry = async () => {
+    try {
+      const status = await startTelemetryListener(telemetryPort);
+      setTelemetryStatus(status);
+      setTelemetryPort(status.listener.port);
+      setStatusMessage(`MAVLink telemetry reader listening on UDP ${status.listener.port}`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not start telemetry reader");
+    }
+  };
+
+  const handleStopTelemetry = async () => {
+    try {
+      const status = await stopTelemetryListener();
+      setTelemetryStatus(status);
+      setStatusMessage("MAVLink telemetry reader stopped");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not stop telemetry reader");
+    }
+  };
+
+  const handleClearLogs = async () => {
+    try {
+      await clearLogs();
+      setLogs([]);
+      setStatusMessage("Logs cleared");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not clear logs");
+    }
+  };
+
+  const handleRunTerminalCommand = async () => {
+    const command = terminalCommand.trim();
+    if (!command) {
+      return;
+    }
+
+    setTerminalRunning(true);
+    setStatusMessage(`Running ${command}`);
+    try {
+      const result = await runTerminalCommand(command);
+      setTerminalHistory((current) => [result, ...current].slice(0, 20));
+      setStatusMessage(result.exitCode === 0 ? "Command completed" : `Command exited with ${result.exitCode}`);
+      refreshLogs();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Command failed");
+    } finally {
+      setTerminalRunning(false);
+    }
   };
 
   const handleSoftwareUpdate = async () => {
@@ -2164,6 +2693,42 @@ function App() {
             </div>
           </section>
 
+          <section className="custom-library">
+            <div className="build-guide-header">
+              <span>Custom Library</span>
+              <strong>{customComponents.length}</strong>
+            </div>
+            <button className="guide-action" type="button" onClick={handleSaveSelectedAsCustom} disabled={!selectedNode}>
+              <Save size={15} />
+              <span>Save Selected</span>
+            </button>
+            {filteredCustomComponents.length > 0 ? (
+              <div className="custom-library-list">
+                {filteredCustomComponents.map((component) => (
+                  <div className="custom-library-item" key={component.id ?? component.name}>
+                    <button type="button" onClick={() => addCustomComponent(component)}>
+                      <Plus size={15} />
+                      <span>
+                        <strong>{component.name}</strong>
+                        <small>{customComponentSummary(component)}</small>
+                      </span>
+                    </button>
+                    <button
+                      className="icon-button danger"
+                      type="button"
+                      title="Remove custom component"
+                      onClick={() => void handleDeleteCustomComponent(component)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="library-empty">No saved components</div>
+            )}
+          </section>
+
           <div className="catalog-list">
             {Object.entries(groupedCatalog).map(([category, components]) => (
               <section key={category} className="catalog-group">
@@ -2362,6 +2927,18 @@ function App() {
             <button className={tab === "simulation" ? "active" : ""} type="button" onClick={() => setTab("simulation")}>
               <Play size={16} />
               <span>SITL</span>
+            </button>
+            <button className={tab === "telemetry" ? "active" : ""} type="button" onClick={() => setTab("telemetry")}>
+              <Radio size={16} />
+              <span>Live</span>
+            </button>
+            <button className={tab === "logs" ? "active" : ""} type="button" onClick={() => setTab("logs")}>
+              <ScrollText size={16} />
+              <span>Logs</span>
+            </button>
+            <button className={tab === "terminal" ? "active" : ""} type="button" onClick={() => setTab("terminal")}>
+              <Terminal size={16} />
+              <span>Term</span>
             </button>
             <button className={tab === "performance" ? "active" : ""} type="button" onClick={() => setTab("performance")}>
               <Sparkles size={16} />
@@ -2634,6 +3211,55 @@ function App() {
                 />
               </label>
 
+              <section className="swarm-layout">
+                <h2>Swarm</h2>
+                <div className="environment-grid">
+                  <label className="field">
+                    <span>Vehicles</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={32}
+                      value={settings.swarmCount}
+                      onChange={(event) => setSettings({ ...settings, swarmCount: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>
+                      Spacing
+                      <small>m</small>
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={settings.swarmSpacingM}
+                      onChange={(event) => setSettings({ ...settings, swarmSpacingM: Number(event.target.value) })}
+                    />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Layout</span>
+                  <select
+                    value={settings.swarmLayout}
+                    onChange={(event) => setSettings({ ...settings, swarmLayout: event.target.value as SimulationSettings["swarmLayout"] })}
+                  >
+                    <option value="line">Line</option>
+                    <option value="grid">Grid</option>
+                    <option value="circle">Circle</option>
+                  </select>
+                </label>
+                {sitlPlan?.swarm && sitlPlan.swarm.count > 1 ? (
+                  <div className="swarm-map">
+                    {sitlPlan.swarm.vehicles.map((vehicle) => (
+                      <span key={vehicle.sysid}>
+                        #{vehicle.sysid} {vehicle.x},{vehicle.y} m
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+
               <section className="mission-test">
                 <h2>Mission Test</h2>
                 <label className="field">
@@ -2649,6 +3275,7 @@ function App() {
                     <option value="low-battery">Low battery</option>
                     <option value="gps-denied">GPS denied</option>
                     <option value="payload-endurance">Payload endurance</option>
+                    <option value="sensor-failure">Sensor failure</option>
                   </select>
                 </label>
 
@@ -2758,6 +3385,39 @@ function App() {
                 <p className="scenario-note">{scenarioHint(settings)}</p>
               </section>
 
+              <section className="artifact-panel">
+                <h2>Scenario Files</h2>
+                <div className="artifact-grid">
+                  <button type="button" onClick={() => void handleArtifactDownload(buildMissionFile, "Mission waypoints exported")}>
+                    <Download size={16} />
+                    <span>Mission</span>
+                  </button>
+                  <button type="button" onClick={handleMissionImportClick}>
+                    <FolderOpen size={16} />
+                    <span>Import</span>
+                  </button>
+                  <button type="button" onClick={() => void handleArtifactDownload(buildPrearmFile, "Pre-arm scenario exported")}>
+                    <ShieldCheck size={16} />
+                    <span>Pre-arm</span>
+                  </button>
+                  <button type="button" onClick={() => void handleArtifactDownload(buildJsonBridgeFile, "JSON bridge template exported")}>
+                    <FileJson size={16} />
+                    <span>Bridge</span>
+                  </button>
+                  <button type="button" onClick={() => void handleArtifactDownload(buildGazeboWorldFile, "Gazebo world exported")}>
+                    <Wind size={16} />
+                    <span>Gazebo</span>
+                  </button>
+                </div>
+                <input
+                  ref={missionFileInputRef}
+                  className="workspace-file-input"
+                  type="file"
+                  accept=".waypoints,.txt,text/plain"
+                  onChange={handleMissionFileSelected}
+                />
+              </section>
+
               <section className="gcs-targets">
                 <h2>Ground Stations</h2>
                 {gcsTargets.map((target) => (
@@ -2805,6 +3465,28 @@ function App() {
                 </section>
               ) : null}
             </div>
+          )}
+
+          {tab === "telemetry" && (
+            <TelemetryPanel
+              status={telemetryStatus}
+              port={telemetryPort}
+              onPortChange={setTelemetryPort}
+              onStart={() => void handleStartTelemetry()}
+              onStop={() => void handleStopTelemetry()}
+            />
+          )}
+
+          {tab === "logs" && <LogsPanel logs={logs} onRefresh={refreshLogs} onClear={() => void handleClearLogs()} />}
+
+          {tab === "terminal" && (
+            <TerminalPanel
+              command={terminalCommand}
+              history={terminalHistory}
+              running={terminalRunning}
+              onCommandChange={setTerminalCommand}
+              onRun={() => void handleRunTerminalCommand()}
+            />
           )}
 
           {tab === "performance" && <PerformancePanel estimate={performanceEstimate} />}

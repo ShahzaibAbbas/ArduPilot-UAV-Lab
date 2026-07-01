@@ -13,8 +13,13 @@ A local design-and-simulation workspace for assembling UAV components, validatin
 - Local AI-style performance estimator for mass, energy, endurance, range, payload margin, mission reserve, wind penalty, current margin, and assumptions from selected components and specs.
 - JSON design export and server-side design save.
 - Workspace save/load using `.saq` files.
+- Persistent custom component templates saved under `data/library/`.
 - ArduPilot `.param` starter export from the selected components, including two-layer battery failsafe thresholds/actions and starter params for airspeed, optical flow, and parachute components.
-- SITL command planning for native SITL frames and the ArduPilot JSON physics backend.
+- SITL command planning for native SITL frames, multi-vehicle swarm counts/layout metadata, and the ArduPilot JSON physics backend.
+- MAVLink UDP telemetry reader with a live status panel for heartbeat, battery, GPS, attitude, VFR HUD, and status text messages.
+- In-app Logs panel backed by `data/logs/server.log` for API, terminal, maintenance, and SITL lifecycle events.
+- In-app workspace Terminal panel for local diagnostics and simulator commands.
+- Scenario exports for QGC waypoint missions, pre-arm test checklists, JSON physics bridge process templates, and Gazebo world/plugin files for wind and sensor-failure tests.
 - In-app software update button for Git checkouts. It runs `git pull --ff-only`, `npm install`, and `npm run build`.
 
 Contact: shahzaib.abbas@hotmail.com
@@ -52,6 +57,8 @@ chmod +x ./Launch-Ubuntu.sh
 
 The launchers check for Node.js 18 or newer and npm, install Node.js through `winget` on Windows or Homebrew on macOS when available, create the local `data/` and `backups/` folders, install missing npm packages, open `http://127.0.0.1:5173`, and start the app. The Ubuntu launcher reports the exact `apt` commands if Node.js or npm is missing.
 
+The API server watches the launcher process. Closing the launcher command window shuts down the server and any SITL or telemetry reader processes started by the app.
+
 They install the files needed for this web app. ArduPilot SITL itself is still detected separately through `sim_vehicle.py`, `ARDUPILOT_HOME`, `ARDUPILOT_ROOT`, or `PATH`.
 
 Designed by UAS Doctoral Tech.
@@ -78,6 +85,14 @@ If the app was copied as a ZIP or upload package without a `.git` folder, the bu
 Use the canvas toolbar to create a new empty space, reset to the starter workspace, save the current workspace, or load a saved workspace.
 
 Saved workspace files use the `.saq` extension. The file is JSON with a small format header and the current design payload, including components, links, settings, and product specifications.
+
+## UI study
+
+The FHD operations layout was guided by the Open Design local-first studio model:
+
+```text
+docs/fhd-open-design-study.md
+```
 
 ## ArduPilot SITL setup
 
@@ -112,9 +127,6 @@ src/
 
 ## Next build targets
 
-- MAVLink telemetry reader and live status panel.
-- Custom component library persistence.
-- Multi-vehicle swarm layouts.
-- JSON physics bridge process templates.
-- Mission import/export and automated pre-arm test scenarios.
-- Gazebo world/plugin file generation for wind and sensor-failure scenarios.
+- Full MAVLink command/control actions from the live panel.
+- Zip packaging for multi-file simulator export bundles.
+- Direct Gazebo plugin compilation helpers for supported simulator installs.

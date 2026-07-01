@@ -6,6 +6,9 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false,
+    watch: {
+      ignored: ["**/backups/**", "**/github uploading/**", "**/Updates/**", "**/data/logs/**", "**/data/design-browser-profile/**"]
+    },
     proxy: {
       "/api": "http://127.0.0.1:4310"
     }

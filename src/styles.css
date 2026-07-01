@@ -238,7 +238,7 @@ button:disabled {
 
 .workspace {
   display: grid;
-  grid-template-columns: 300px minmax(520px, 1fr) 360px;
+  grid-template-columns: 320px minmax(720px, 1fr) 430px;
   min-height: 0;
 }
 
@@ -1308,7 +1308,7 @@ button:disabled {
 
 .tabbar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   padding: 10px;
   border-bottom: 1px solid var(--line);
@@ -1319,17 +1319,31 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  min-width: 0;
   height: 36px;
   border-radius: 8px;
   background: #edf1f3;
   color: var(--muted);
   font-weight: 800;
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.tabbar button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tabbar button.active {
   background: var(--text);
   color: #ffffff;
+}
+
+.panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .connection-legend {
@@ -1342,7 +1356,11 @@ button:disabled {
 
 .connection-legend h2,
 .gcs-targets h2,
+.artifact-panel h2,
 .mission-test h2,
+.swarm-layout h2,
+.telemetry-listener h2,
+.telemetry-vehicles h2,
 .sitl-locator h2 {
   margin: 0;
   color: var(--muted);
@@ -1540,7 +1558,12 @@ button:disabled {
 
 .sitl-locator,
 .gcs-targets,
-.mission-test {
+.mission-test,
+.swarm-layout,
+.artifact-panel,
+.telemetry-listener,
+.telemetry-vehicles,
+.custom-library {
   display: grid;
   gap: 9px;
   margin: 0 0 14px;
@@ -1625,6 +1648,315 @@ button:disabled {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.artifact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.artifact-grid button,
+.custom-library-item button:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: #edf1f3;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.artifact-grid button:hover,
+.custom-library-item button:first-child:hover {
+  box-shadow: 0 0 0 2px rgba(45, 108, 223, 0.12);
+}
+
+.swarm-map {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.swarm-map span {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.custom-library {
+  margin: 0 12px 14px;
+}
+
+.custom-library-list {
+  display: grid;
+  gap: 7px;
+}
+
+.custom-library-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 7px;
+  align-items: center;
+}
+
+.custom-library-item button:first-child {
+  justify-content: flex-start;
+  height: auto;
+  padding: 8px;
+  text-align: left;
+}
+
+.custom-library-item span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.custom-library-item strong,
+.custom-library-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-library-item small,
+.library-empty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.library-empty {
+  padding: 8px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 800;
+}
+
+.telemetry-stats,
+.telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.telemetry-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.telemetry-stats div,
+.telemetry-grid div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.telemetry-stats strong,
+.telemetry-stats span,
+.telemetry-grid strong,
+.telemetry-grid span {
+  display: block;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.telemetry-stats strong,
+.telemetry-grid strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.telemetry-grid strong {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+}
+
+.telemetry-grid small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.telemetry-stats span,
+.telemetry-grid span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.telemetry-vehicles {
+  gap: 8px;
+}
+
+.telemetry-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.telemetry-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.telemetry-card-title strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.telemetry-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.telemetry-status-text {
+  padding: 7px;
+  border-left: 4px solid var(--blue);
+  border-radius: 6px;
+  background: #edf4ff;
+  color: var(--blue) !important;
+  font-weight: 800;
+}
+
+.log-list,
+.terminal-history {
+  display: grid;
+  gap: 8px;
+}
+
+.log-entry,
+.terminal-result {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.log-entry.info,
+.terminal-result.ok {
+  border-left-color: var(--green);
+}
+
+.log-entry.warn {
+  border-left-color: var(--orange);
+}
+
+.log-entry.error,
+.terminal-result.bad {
+  border-left-color: var(--red);
+}
+
+.log-entry div,
+.terminal-result-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.log-entry strong,
+.terminal-result-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.log-entry span,
+.terminal-result-title span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.log-entry p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.log-entry code,
+.terminal-result pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: 7px;
+  background: #172026;
+  color: #e7f5eb;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminal-runner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  gap: 8px;
+  align-items: end;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+
+.terminal-runner .field {
+  margin: 0;
+}
+
+.terminal-runner button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  border-radius: 8px;
+  background: var(--text);
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.terminal-result pre.stderr {
+  background: #2b1b1b;
+  color: #ffd6d6;
 }
 
 .port-row {
@@ -2242,7 +2574,7 @@ button:disabled {
 
 @media (max-width: 1180px) {
   .workspace {
-    grid-template-columns: 260px minmax(500px, 1fr) 330px;
+    grid-template-columns: 270px minmax(500px, 1fr) 390px;
   }
 
   .topbar {

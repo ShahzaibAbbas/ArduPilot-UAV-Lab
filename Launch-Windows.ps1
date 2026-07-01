@@ -128,8 +128,10 @@ try {
 
   Write-Step "Starting ArduPilot UAV Lab"
   Write-Host "Open http://127.0.0.1:5173 if the browser does not open automatically."
+  $env:ARDUPILOT_LAUNCHER_PID = [string]$PID
   Start-BrowserLater
   npm run dev
 } finally {
+  Remove-Item Env:\ARDUPILOT_LAUNCHER_PID -ErrorAction SilentlyContinue
   Pop-Location
 }

@@ -359,6 +359,15 @@ export function validateDesign(
     }
   }
 
+  if (settings.testScenario === "sensor-failure" && gps.length + compass.length + rangefinders.length + airspeedSensors.length < 2) {
+    issues.push({
+      id: "sensor-failure-redundancy",
+      severity: "warning",
+      title: "Sensor redundancy low",
+      message: "Add at least two navigation or environment sensors before rehearsing sensor-failure scenarios."
+    });
+  }
+
   for (const flow of opticalFlowSensors) {
     if (flow.data.properties.requiresRangefinder !== false && rangefinders.length === 0) {
       issues.push({

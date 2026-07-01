@@ -38,4 +38,5 @@ if command -v xdg-open >/dev/null 2>&1; then
   (sleep 3 && xdg-open "$CLIENT_URL" >/dev/null 2>&1 || true) &
 fi
 
+export ARDUPILOT_LAUNCHER_PID="$$"
 npm run dev

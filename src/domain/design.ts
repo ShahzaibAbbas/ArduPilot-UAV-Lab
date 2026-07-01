@@ -70,7 +70,7 @@ export interface SimulationSettings {
   simVehiclePath: string;
   speedup: number;
   locationName: string;
-  testScenario: "nominal" | "wind-gust" | "low-battery" | "gps-denied" | "payload-endurance";
+  testScenario: "nominal" | "wind-gust" | "low-battery" | "gps-denied" | "payload-endurance" | "sensor-failure";
   missionDistanceKm: number;
   windSpeedMps: number;
   windGustMps: number;
@@ -78,6 +78,9 @@ export interface SimulationSettings {
   batteryCriticalPercent: number;
   batteryFailsafeAction: "Warn" | "Land" | "RTL" | "SmartRTL";
   batteryCriticalAction: "Land" | "RTL" | "SmartRTL" | "Terminate";
+  swarmCount: number;
+  swarmLayout: "line" | "grid" | "circle";
+  swarmSpacingM: number;
   gcsHost: string;
   gcsPort: number;
   gcsTargets: GcsTargetSettings[];
@@ -108,6 +111,9 @@ export const defaultSettings: SimulationSettings = {
   batteryCriticalPercent: 10,
   batteryFailsafeAction: "RTL",
   batteryCriticalAction: "Land",
+  swarmCount: 1,
+  swarmLayout: "line",
+  swarmSpacingM: 20,
   gcsHost: "127.0.0.1",
   gcsPort: 14550,
   gcsTargets: [

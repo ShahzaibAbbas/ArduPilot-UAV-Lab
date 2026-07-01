@@ -114,4 +114,5 @@ fi
 step "Starting ArduPilot UAV Lab"
 echo "Open http://127.0.0.1:5173 if the browser does not open automatically."
 open_browser_later
+export ARDUPILOT_LAUNCHER_PID="$$"
 npm run dev
