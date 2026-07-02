@@ -56,6 +56,8 @@ import {
   Sparkles,
   Terminal,
   Trash2,
+  Redo2,
+  Undo2,
   Wind,
   Zap,
   type LucideIcon
@@ -157,6 +159,7 @@ const signalColors: Record<SignalKind, string> = {
 
 const SAQ_FORMAT = "ardupilot-uav-lab.workspace";
 const SAQ_VERSION = 1;
+const HISTORY_LIMIT = 100;
 
 interface SaqWorkspaceFile {
   format: typeof SAQ_FORMAT;
@@ -164,6 +167,38 @@ interface SaqWorkspaceFile {
   savedAt: string;
   design: UavDesign;
 }
+
+interface WorkspaceSnapshot {
+  id?: string;
+  name: string;
+  nodes: DesignNode[];
+  edges: DesignEdge[];
+  settings: SimulationSettings;
+}
+
+interface WorkspaceHistoryEntry {
+  snapshot: WorkspaceSnapshot;
+  serialized: string;
+}
+
+type SaveTextResult = "saved" | "downloaded" | "cancelled";
+
+type NativeFileWritable = {
+  write: (data: Blob) => Promise<void>;
+  close: () => Promise<void>;
+};
+
+type NativeFileHandle = {
+  createWritable: () => Promise<NativeFileWritable>;
+};
+
+type NativeSaveFilePicker = (options: {
+  suggestedName: string;
+  types: Array<{
+    description: string;
+    accept: Record<string, string[]>;
+  }>;
+}) => Promise<NativeFileHandle>;
 
 function signalLabel(signal: SignalKind) {
   return signal.toUpperCase();
@@ -188,12 +223,89 @@ function downloadBlob(fileName: string, blob: Blob) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = fileName;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function downloadArtifact(artifact: ArtifactResult) {
   downloadText(artifact.fileName, artifact.content, artifact.mimeType);
+}
+
+function extensionForFileName(fileName: string) {
+  const match = fileName.match(/\.[^.]+$/);
+  return match?.[0] ?? ".txt";
+}
+
+function isSaveCancelled(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function filePickerOptions(fileName: string, mimeType: string, description: string) {
+  return {
+    suggestedName: fileName,
+    types: [
+      {
+        description,
+        accept: {
+          [mimeType]: [extensionForFileName(fileName)]
+        }
+      }
+    ]
+  };
+}
+
+async function saveTextToUserFile(fileName: string, content: string, mimeType: string, description: string): Promise<SaveTextResult> {
+  const savePicker = (window as Window & { showSaveFilePicker?: NativeSaveFilePicker }).showSaveFilePicker;
+
+  if (typeof savePicker === "function") {
+    try {
+      const handle = await savePicker(filePickerOptions(fileName, mimeType, description));
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([content], { type: mimeType }));
+      await writable.close();
+      return "saved";
+    } catch (error) {
+      if (isSaveCancelled(error)) {
+        return "cancelled";
+      }
+      throw error;
+    }
+  }
+
+  downloadText(fileName, content, mimeType);
+  return "downloaded";
+}
+
+async function saveGeneratedTextToUserFile(
+  fileName: string,
+  mimeType: string,
+  description: string,
+  createContent: () => Promise<string>
+): Promise<SaveTextResult> {
+  const savePicker = (window as Window & { showSaveFilePicker?: NativeSaveFilePicker }).showSaveFilePicker;
+
+  if (typeof savePicker === "function") {
+    try {
+      const handle = await savePicker(filePickerOptions(fileName, mimeType, description));
+      const content = await createContent();
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([content], { type: mimeType }));
+      await writable.close();
+      return "saved";
+    } catch (error) {
+      if (isSaveCancelled(error)) {
+        return "cancelled";
+      }
+      throw error;
+    }
+  }
+
+  const content = await createContent();
+  downloadText(fileName, content, mimeType);
+  return "downloaded";
 }
 
 function distanceKmBetween(left: { lat: number; lon: number }, right: { lat: number; lon: number }) {
@@ -251,6 +363,63 @@ function designFromState(
     nodes,
     edges,
     settings
+  };
+}
+
+function cleanHistoryNode(node: DesignNode): DesignNode {
+  return {
+    id: node.id,
+    type: "componentNode",
+    position: { ...node.position },
+    data: {
+      componentType: node.data.componentType,
+      label: node.data.label,
+      properties: { ...node.data.properties }
+    },
+    selected: false
+  };
+}
+
+function cleanHistoryEdge(edge: DesignEdge): DesignEdge {
+  return {
+    ...edge,
+    data: edge.data ? { ...edge.data } : undefined,
+    selected: false
+  };
+}
+
+function cloneWorkspaceSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
+  return {
+    id: snapshot.id,
+    name: snapshot.name,
+    nodes: snapshot.nodes.map(cleanHistoryNode),
+    edges: snapshot.edges.map(cleanHistoryEdge),
+    settings: settingsWithDefaults(snapshot.settings)
+  };
+}
+
+function createWorkspaceSnapshot(
+  id: string | undefined,
+  name: string,
+  nodes: DesignNode[],
+  edges: DesignEdge[],
+  settings: SimulationSettings
+): WorkspaceSnapshot {
+  return cloneWorkspaceSnapshot({
+    id,
+    name,
+    nodes,
+    edges,
+    settings
+  });
+}
+
+function createHistoryEntry(snapshot: WorkspaceSnapshot): WorkspaceHistoryEntry {
+  const cleanSnapshot = cloneWorkspaceSnapshot(snapshot);
+  const { id: _id, ...serializableSnapshot } = cleanSnapshot;
+  return {
+    snapshot: cleanSnapshot,
+    serialized: JSON.stringify(serializableSnapshot)
   };
 }
 
@@ -1761,11 +1930,17 @@ function TerminalPanel({
 function App() {
   const { fitView } = useReactFlow<DesignNode, DesignEdge>();
   const starterDesign = useMemo(() => createStarterDesign(), []);
+  const initialHistoryEntry = useMemo(
+    () => createHistoryEntry(createWorkspaceSnapshot(starterDesign.id, starterDesign.name, starterDesign.nodes, starterDesign.edges, starterDesign.settings)),
+    [starterDesign]
+  );
   const [designId, setDesignId] = useState<string | undefined>(starterDesign.id);
   const [designName, setDesignName] = useState(starterDesign.name);
   const [nodes, setNodes] = useState<DesignNode[]>(starterDesign.nodes);
   const [edges, setEdges] = useState<DesignEdge[]>(starterDesign.edges);
   const [settings, setSettings] = useState<SimulationSettings>(starterDesign.settings);
+  const [undoStack, setUndoStack] = useState<WorkspaceHistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<WorkspaceHistoryEntry[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>("fc-1");
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [hoveredConnection, setHoveredConnection] = useState<HoveredConnection | null>(null);
@@ -1788,6 +1963,48 @@ function App() {
   const [gazeboCompiling, setGazeboCompiling] = useState(false);
   const workspaceFileInputRef = useRef<HTMLInputElement | null>(null);
   const missionFileInputRef = useRef<HTMLInputElement | null>(null);
+  const historyCurrentRef = useRef<WorkspaceHistoryEntry>(initialHistoryEntry);
+  const historyApplyingRef = useRef(false);
+  const undoStackRef = useRef<WorkspaceHistoryEntry[]>([]);
+  const redoStackRef = useRef<WorkspaceHistoryEntry[]>([]);
+
+  const replaceUndoStack = useCallback((nextStack: WorkspaceHistoryEntry[]) => {
+    undoStackRef.current = nextStack;
+    setUndoStack(nextStack);
+  }, []);
+
+  const replaceRedoStack = useCallback((nextStack: WorkspaceHistoryEntry[]) => {
+    redoStackRef.current = nextStack;
+    setRedoStack(nextStack);
+  }, []);
+
+  const applyHistorySnapshot = useCallback(
+    (snapshot: WorkspaceSnapshot, message: string) => {
+      const cleanSnapshot = cloneWorkspaceSnapshot(snapshot);
+      historyApplyingRef.current = true;
+      setDesignId(cleanSnapshot.id);
+      setDesignName(cleanSnapshot.name);
+      setNodes(cleanSnapshot.nodes);
+      setEdges(cleanSnapshot.edges);
+      setSettings(cleanSnapshot.settings);
+      setSelectedNodeId(cleanSnapshot.nodes[0]?.id ?? null);
+      setSelectedEdgeId(null);
+      setHoveredConnection(null);
+      setContextMenu(null);
+      setSitlPlan(null);
+      setStatusMessage(message);
+
+      if (cleanSnapshot.nodes.length > 0) {
+        window.setTimeout(() => {
+          void fitView({ duration: 350, padding: 0.22, maxZoom: 1.05 });
+        }, 50);
+      }
+    },
+    [fitView]
+  );
+
+  const canUndo = undoStack.length > 0;
+  const canRedo = redoStack.length > 0;
 
   useEffect(() => {
     getSystemStatus()
@@ -1845,6 +2062,53 @@ function App() {
       window.clearInterval(interval);
     };
   }, []);
+
+  const historySnapshot = useMemo(
+    () => createWorkspaceSnapshot(designId, designName, nodes, edges, settings),
+    [designId, designName, edges, nodes, settings]
+  );
+
+  useEffect(() => {
+    const nextEntry = createHistoryEntry(historySnapshot);
+
+    if (historyApplyingRef.current) {
+      historyCurrentRef.current = nextEntry;
+      historyApplyingRef.current = false;
+      return;
+    }
+
+    if (nextEntry.serialized === historyCurrentRef.current.serialized) {
+      return;
+    }
+
+    replaceUndoStack([...undoStackRef.current, historyCurrentRef.current].slice(-HISTORY_LIMIT));
+    replaceRedoStack([]);
+    historyCurrentRef.current = nextEntry;
+  }, [historySnapshot, replaceRedoStack, replaceUndoStack]);
+
+  const handleUndo = useCallback(() => {
+    const previousEntry = undoStackRef.current.at(-1);
+    if (!previousEntry) {
+      setStatusMessage("Nothing to undo");
+      return;
+    }
+
+    replaceUndoStack(undoStackRef.current.slice(0, -1));
+    replaceRedoStack([historyCurrentRef.current, ...redoStackRef.current].slice(0, HISTORY_LIMIT));
+    applyHistorySnapshot(previousEntry.snapshot, "Undo applied");
+  }, [applyHistorySnapshot, replaceRedoStack, replaceUndoStack]);
+
+  const handleRedo = useCallback(() => {
+    const nextEntry = redoStackRef.current[0];
+    if (!nextEntry) {
+      setStatusMessage("Nothing to redo");
+      return;
+    }
+
+    replaceUndoStack([...undoStackRef.current, historyCurrentRef.current].slice(-HISTORY_LIMIT));
+    replaceRedoStack(redoStackRef.current.slice(1));
+    applyHistorySnapshot(nextEntry.snapshot, "Redo applied");
+  }, [applyHistorySnapshot, replaceRedoStack, replaceUndoStack]);
 
   const validation = useMemo(() => validateDesign(nodes, edges, settings), [nodes, edges, settings]);
 
@@ -2431,37 +2695,27 @@ function App() {
   const currentDesign = () => designFromState(designName, nodes, edges, settings, designId);
 
   const applyWorkspaceDesign = (design: UavDesign, message: string) => {
-    setDesignId(design.id);
-    setDesignName(design.name);
-    setNodes(design.nodes.map((node): DesignNode => ({ ...node, selected: false })));
-    setEdges(design.edges);
-    setSettings(settingsWithDefaults(design.settings));
-    setSelectedNodeId(design.nodes[0]?.id ?? null);
+    const normalized = normalizeDesignPayload(design, design.name);
+    setDesignId(normalized.id);
+    setDesignName(normalized.name);
+    setNodes(normalized.nodes.map((node): DesignNode => ({ ...node, selected: false })));
+    setEdges(normalized.edges.map((edge): DesignEdge => ({ ...edge, selected: false })));
+    setSettings(settingsWithDefaults(normalized.settings));
+    setSelectedNodeId(normalized.nodes[0]?.id ?? null);
     setSelectedEdgeId(null);
     setHoveredConnection(null);
     setContextMenu(null);
     setTab("inspector");
     setSitlPlan(null);
     setStatusMessage(message);
-    if (design.nodes.length > 0) {
+    if (normalized.nodes.length > 0) {
       window.setTimeout(() => {
         void fitView({ duration: 450, padding: 0.22, maxZoom: 1.05 });
       }, 50);
     }
   };
 
-  const confirmWorkspaceReplace = (action: string) => {
-    if (nodes.length === 0 && edges.length === 0) {
-      return true;
-    }
-    return window.confirm(`${action} will replace the current workspace. Save a .saq file first if you need to keep it.`);
-  };
-
   const handleNewSpace = () => {
-    if (!confirmWorkspaceReplace("Create New Space")) {
-      return;
-    }
-
     applyWorkspaceDesign(
       {
         name: "Untitled Space",
@@ -2474,17 +2728,30 @@ function App() {
   };
 
   const handleResetWorkspace = () => {
-    if (!confirmWorkspaceReplace("Reset Workspace")) {
-      return;
-    }
-
     applyWorkspaceDesign(createStarterDesign(), "Workspace reset to starter design");
   };
 
-  const handleSaveWorkspaceFile = () => {
-    const workspaceFile = saqWorkspaceFor(currentDesign());
-    downloadText(`${safeFileName(designName)}.saq`, JSON.stringify(workspaceFile, null, 2), "application/vnd.ardupilot-uav-lab.saq+json");
-    setStatusMessage("Workspace saved as .saq");
+  const handleSaveWorkspaceFile = async (design = currentDesign()) => {
+    try {
+      const workspaceFile = saqWorkspaceFor(design);
+      const result = await saveTextToUserFile(
+        `${safeFileName(design.name)}.saq`,
+        JSON.stringify(workspaceFile, null, 2),
+        "application/vnd.ardupilot-uav-lab.saq+json",
+        "ArduPilot UAV Lab workspace"
+      );
+
+      if (result === "cancelled") {
+        setStatusMessage("Save cancelled");
+        return result;
+      }
+
+      setStatusMessage(result === "saved" ? "Workspace saved to selected location" : "Workspace downloaded");
+      return result;
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Workspace save failed");
+      return "cancelled";
+    }
   };
 
   const handleLoadWorkspaceClick = () => {
@@ -2508,20 +2775,52 @@ function App() {
   };
 
   const handleSave = async () => {
-    const result = await saveDesign(currentDesign());
-    setDesignId(result.design.id);
-    setStatusMessage("Design saved");
+    const design = currentDesign();
+
+    try {
+      const fileResult = await handleSaveWorkspaceFile(design);
+      if (fileResult === "cancelled") {
+        return;
+      }
+
+      try {
+        const result = await saveDesign(design);
+        setDesignId(result.design.id);
+      } catch (error) {
+        console.warn("Local design catalog save failed", error);
+      }
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Workspace save failed");
+    }
   };
 
-  const handleJsonDownload = () => {
-    downloadText(`${designName.replace(/\s+/g, "-").toLowerCase()}.uav.json`, JSON.stringify(currentDesign(), null, 2), "application/json");
-    setStatusMessage("Design JSON exported");
+  const handleJsonDownload = async () => {
+    try {
+      const result = await saveTextToUserFile(
+        `${safeFileName(designName)}.uav.json`,
+        JSON.stringify(currentDesign(), null, 2),
+        "application/json",
+        "UAV design JSON"
+      );
+      setStatusMessage(result === "saved" ? "Design JSON saved to selected location" : result === "downloaded" ? "Design JSON downloaded" : "Export cancelled");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Design JSON export failed");
+    }
   };
 
   const handleParamsDownload = async () => {
-    const result = await buildParamFile(currentDesign());
-    downloadText(result.fileName, result.content, "text/plain");
-    setStatusMessage("ArduPilot parameter file exported");
+    try {
+      const design = currentDesign();
+      const result = await saveGeneratedTextToUserFile(`${safeFileName(design.name)}.param`, "text/plain", "ArduPilot parameter file", async () => {
+        const artifact = await buildParamFile(design);
+        return artifact.content;
+      });
+      setStatusMessage(
+        result === "saved" ? "ArduPilot parameter file saved to selected location" : result === "downloaded" ? "ArduPilot parameter file downloaded" : "Export cancelled"
+      );
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Parameter export failed");
+    }
   };
 
   const handleArtifactDownload = async (builder: (design: UavDesign) => Promise<ArtifactResult>, message: string) => {
@@ -2690,9 +2989,37 @@ function App() {
         return;
       }
 
+      if (commandKey && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        return;
+      }
+
+      if (commandKey && key === "y") {
+        event.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      if (commandKey && key === "n") {
+        event.preventDefault();
+        handleNewSpace();
+        return;
+      }
+
+      if (commandKey && event.shiftKey && key === "r") {
+        event.preventDefault();
+        handleResetWorkspace();
+        return;
+      }
+
       if (commandKey && event.shiftKey && key === "s") {
         event.preventDefault();
-        handleSaveWorkspaceFile();
+        void handleSaveWorkspaceFile();
         return;
       }
 
@@ -2710,7 +3037,13 @@ function App() {
 
       if (commandKey && key === "e") {
         event.preventDefault();
-        handleJsonDownload();
+        void handleJsonDownload();
+        return;
+      }
+
+      if (commandKey && key === "p") {
+        event.preventDefault();
+        void handleParamsDownload();
         return;
       }
 
@@ -2767,8 +3100,13 @@ function App() {
     focusSelectedNode,
     handleJsonDownload,
     handleLoadWorkspaceClick,
+    handleNewSpace,
+    handleParamsDownload,
+    handleRedo,
+    handleResetWorkspace,
     handleSave,
     handleSaveWorkspaceFile,
+    handleUndo,
     removeSelectedEdge,
     removeSelectedNode,
     selectedEdge,
@@ -2851,21 +3189,29 @@ function App() {
         </div>
 
         <div className="top-actions">
-          <button type="button" title="Save (Ctrl+S)" aria-keyshortcuts="Control+S" onClick={handleSave}>
+          <button type="button" title="Save workspace file (Ctrl+S)" aria-keyshortcuts="Control+S" onClick={() => void handleSave()}>
             <Save size={17} />
             <span>Save</span>
           </button>
-          <button type="button" title="Export JSON (Ctrl+E)" aria-keyshortcuts="Control+E" onClick={handleJsonDownload}>
+          <button type="button" title="Export JSON (Ctrl+E)" aria-keyshortcuts="Control+E" onClick={() => void handleJsonDownload()}>
             <FileJson size={17} />
             <span>JSON</span>
           </button>
-          <button type="button" title="Export parameters" onClick={handleParamsDownload}>
+          <button type="button" title="Export parameters (Ctrl+P)" aria-keyshortcuts="Control+P" onClick={handleParamsDownload}>
             <Download size={17} />
             <span>Params</span>
           </button>
           <button type="button" title="Update software from Git and compile" onClick={handleSoftwareUpdate} disabled={softwareUpdating}>
             <RefreshCw size={17} />
             <span>{softwareUpdating ? "Updating" : "Update"}</span>
+          </button>
+          <button type="button" title="Undo last workspace change (Ctrl+Z)" aria-keyshortcuts="Control+Z" onClick={handleUndo} disabled={!canUndo}>
+            <Undo2 size={17} />
+            <span>Undo</span>
+          </button>
+          <button type="button" title="Redo workspace change (Ctrl+Y)" aria-keyshortcuts="Control+Y" onClick={handleRedo} disabled={!canRedo}>
+            <Redo2 size={17} />
+            <span>Redo</span>
           </button>
         </div>
       </header>
@@ -3048,15 +3394,25 @@ function App() {
               <span>{edges.length} links</span>
             </Panel>
             <Panel position="top-right" className="workspace-panel">
-              <button type="button" title="Create new empty space" onClick={handleNewSpace}>
+              <button type="button" title="Create new empty space (Ctrl+N)" aria-keyshortcuts="Control+N" onClick={handleNewSpace}>
                 <FilePlus size={15} />
                 <span>New</span>
               </button>
-              <button type="button" title="Reset workspace to starter design" onClick={handleResetWorkspace}>
+              <button
+                type="button"
+                title="Reset workspace to starter design (Ctrl+Shift+R)"
+                aria-keyshortcuts="Control+Shift+R"
+                onClick={handleResetWorkspace}
+              >
                 <RotateCcw size={15} />
                 <span>Reset</span>
               </button>
-              <button type="button" title="Save current space as .saq (Ctrl+Shift+S)" aria-keyshortcuts="Control+Shift+S" onClick={handleSaveWorkspaceFile}>
+              <button
+                type="button"
+                title="Save current space as .saq (Ctrl+Shift+S)"
+                aria-keyshortcuts="Control+Shift+S"
+                onClick={() => void handleSaveWorkspaceFile()}
+              >
                 <Save size={15} />
                 <span>Save .saq</span>
               </button>
