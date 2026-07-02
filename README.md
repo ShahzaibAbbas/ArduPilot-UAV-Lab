@@ -99,11 +99,7 @@ Before preparing a GitHub upload or deleting generated files, follow `UPLOAD_RUL
 
 ## UI study
 
-The FHD operations layout was guided by the Open Design local-first studio model:
-
-```text
-docs/fhd-open-design-study.md
-```
+The FHD operations layout was guided by the Open Design local-first studio model.
 
 ## ArduPilot SITL setup
 
