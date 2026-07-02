@@ -79,9 +79,12 @@ import {
   buildMissionFile,
   buildParamFile,
   buildPrearmFile,
+  buildSimulatorBundle,
   buildSitlPlan,
   clearLogs,
+  compileGazeboPlugins,
   deleteCustomComponent,
+  getGazeboStatus,
   getLogs,
   getTelemetryStatus,
   getSystemStatus,
@@ -90,6 +93,7 @@ import {
   locateSimVehicle,
   saveDesign,
   saveCustomComponent,
+  sendMavlinkCommand,
   runTerminalCommand,
   startTelemetryListener,
   stopTelemetryListener,
@@ -97,6 +101,9 @@ import {
   type AppLogEntry,
   type ArtifactResult,
   type CustomComponentTemplate,
+  type GazeboCompileResult,
+  type GazeboStatus,
+  type MavlinkCommandRequest,
   type SitlPlan,
   type SystemStatus,
   type TerminalResult,
@@ -173,6 +180,10 @@ function safeFileName(value: string) {
 
 function downloadText(fileName: string, content: string, mimeType: string) {
   const blob = new Blob([content], { type: mimeType });
+  downloadBlob(fileName, blob);
+}
+
+function downloadBlob(fileName: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -1349,21 +1360,61 @@ function PerformancePanel({ estimate }: { estimate: PerformanceEstimate }) {
   );
 }
 
+const MAVLINK_MODES = [
+  { label: "Guided", value: "guided" },
+  { label: "Loiter", value: "loiter" },
+  { label: "Auto", value: "auto" },
+  { label: "RTL", value: "rtl" },
+  { label: "Land", value: "land" },
+  { label: "Alt Hold", value: "alt-hold" },
+  { label: "Stabilize", value: "stabilize" }
+];
+
 function TelemetryPanel({
   status,
   port,
   onPortChange,
   onStart,
-  onStop
+  onStop,
+  onCommand
 }: {
   status: TelemetryStatus | null;
   port: number;
   onPortChange: (port: number) => void;
   onStart: () => void;
   onStop: () => void;
+  onCommand: (command: MavlinkCommandRequest) => Promise<void>;
 }) {
   const listener = status?.listener;
   const vehicles = status?.vehicles ?? [];
+  const [mode, setMode] = useState("guided");
+  const [takeoffAltitudeM, setTakeoffAltitudeM] = useState(20);
+  const [customCommandId, setCustomCommandId] = useState(176);
+  const [customParams, setCustomParams] = useState([1, 4, 0, 0, 0, 0, 0]);
+  const [busyCommand, setBusyCommand] = useState<string | null>(null);
+  const [panelMessage, setPanelMessage] = useState<string | null>(null);
+
+  const updateCustomParam = (index: number, value: number) => {
+    setCustomParams((current) => current.map((entry, entryIndex) => (entryIndex === index ? value : entry)));
+  };
+
+  const runVehicleCommand = async (
+    vehicle: TelemetryStatus["vehicles"][number],
+    request: Omit<MavlinkCommandRequest, "sysid" | "compid">,
+    label: string
+  ) => {
+    const busyKey = `${vehicle.id}:${label}`;
+    setBusyCommand(busyKey);
+    setPanelMessage(null);
+    try {
+      await onCommand({ sysid: vehicle.sysid, compid: vehicle.compid, ...request });
+      setPanelMessage(`${label} sent to SYS ${vehicle.sysid}`);
+    } catch (error) {
+      setPanelMessage(error instanceof Error ? error.message : "MAVLink command failed");
+    } finally {
+      setBusyCommand(null);
+    }
+  };
 
   return (
     <div className="detail-content">
@@ -1402,6 +1453,7 @@ function TelemetryPanel({
           </div>
         </div>
         {listener?.error ? <p className="scenario-note">{listener.error}</p> : null}
+        {panelMessage ? <p className="scenario-note">{panelMessage}</p> : null}
       </section>
 
       <section className="telemetry-vehicles">
@@ -1411,6 +1463,8 @@ function TelemetryPanel({
         ) : (
           vehicles.map((vehicle) => {
             const gps = vehicle.position ?? vehicle.gps;
+            const hasCommandLink = Boolean(listener?.active && vehicle.link);
+            const commandDisabled = !hasCommandLink || Boolean(busyCommand);
             return (
               <div className="telemetry-card" key={vehicle.id}>
                 <div className="telemetry-card-title">
@@ -1467,6 +1521,132 @@ function TelemetryPanel({
                   </p>
                 ) : null}
                 {vehicle.statusText?.text ? <p className="telemetry-status-text">{vehicle.statusText.text}</p> : null}
+                {vehicle.commandAck ? (
+                  <p className={`telemetry-command-ack ${vehicle.commandAck.result === 0 ? "ok" : "bad"}`}>
+                    MAV_CMD {vehicle.commandAck.command ?? "--"}: {vehicle.commandAck.resultName}
+                  </p>
+                ) : null}
+                <div className="mavlink-command-panel">
+                  <div className="mavlink-command-title">
+                    <strong>Command Link</strong>
+                    <span>{vehicle.link ? `${vehicle.link.host}:${vehicle.link.port}` : "Waiting"}</span>
+                  </div>
+                  <div className="command-action-grid">
+                    <button
+                      type="button"
+                      disabled={commandDisabled}
+                      onClick={() => void runVehicleCommand(vehicle, { action: "arm" }, "Arm")}
+                    >
+                      <ShieldCheck size={15} />
+                      <span>Arm</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={commandDisabled}
+                      onClick={() => void runVehicleCommand(vehicle, { action: "disarm" }, "Disarm")}
+                    >
+                      <Trash2 size={15} />
+                      <span>Disarm</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={commandDisabled}
+                      onClick={() => void runVehicleCommand(vehicle, { action: "rtl" }, "RTL")}
+                    >
+                      <RotateCcw size={15} />
+                      <span>RTL</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={commandDisabled}
+                      onClick={() => void runVehicleCommand(vehicle, { action: "land" }, "Land")}
+                    >
+                      <MapPin size={15} />
+                      <span>Land</span>
+                    </button>
+                  </div>
+
+                  <div className="mavlink-inline-command">
+                    <label className="field">
+                      <span>Mode</span>
+                      <select value={mode} onChange={(event) => setMode(event.target.value)}>
+                        {MAVLINK_MODES.map((entry) => (
+                          <option key={entry.value} value={entry.value}>
+                            {entry.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={commandDisabled}
+                      onClick={() => void runVehicleCommand(vehicle, { action: "mode", mode }, `Mode ${mode}`)}
+                    >
+                      <Settings size={15} />
+                      <span>Set</span>
+                    </button>
+                  </div>
+
+                  <div className="mavlink-inline-command">
+                    <label className="field">
+                      <span>
+                        Takeoff
+                        <small>m</small>
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={1000}
+                        value={takeoffAltitudeM}
+                        onChange={(event) => setTakeoffAltitudeM(Number(event.target.value))}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={commandDisabled}
+                      onClick={() => void runVehicleCommand(vehicle, { action: "takeoff", altitudeM: takeoffAltitudeM }, "Takeoff")}
+                    >
+                      <Play size={15} />
+                      <span>Go</span>
+                    </button>
+                  </div>
+
+                  <details className="custom-command">
+                    <summary>Custom COMMAND_LONG</summary>
+                    <label className="field">
+                      <span>Command ID</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={65535}
+                        value={customCommandId}
+                        onChange={(event) => setCustomCommandId(Number(event.target.value))}
+                      />
+                    </label>
+                    <div className="command-param-grid">
+                      {customParams.map((value, index) => (
+                        <label className="field" key={`param-${index + 1}`}>
+                          <span>P{index + 1}</span>
+                          <input type="number" value={value} onChange={(event) => updateCustomParam(index, Number(event.target.value))} />
+                        </label>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={commandDisabled}
+                      onClick={() =>
+                        void runVehicleCommand(
+                          vehicle,
+                          { action: "custom", commandId: customCommandId, params: customParams },
+                          `MAV_CMD ${customCommandId}`
+                        )
+                      }
+                    >
+                      <Radio size={15} />
+                      <span>Send Command</span>
+                    </button>
+                  </details>
+                </div>
               </div>
             );
           })
@@ -1603,6 +1783,9 @@ function App() {
   const [terminalHistory, setTerminalHistory] = useState<TerminalResult[]>([]);
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [softwareUpdating, setSoftwareUpdating] = useState(false);
+  const [gazeboStatus, setGazeboStatus] = useState<GazeboStatus | null>(null);
+  const [gazeboCompileResult, setGazeboCompileResult] = useState<GazeboCompileResult | null>(null);
+  const [gazeboCompiling, setGazeboCompiling] = useState(false);
   const workspaceFileInputRef = useRef<HTMLInputElement | null>(null);
   const missionFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1617,6 +1800,16 @@ function App() {
       .then((result) => setCustomComponents(result.components))
       .catch((error: Error) => setStatusMessage(error.message));
   }, []);
+
+  const refreshGazeboStatus = useCallback(() => {
+    getGazeboStatus()
+      .then(setGazeboStatus)
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    refreshGazeboStatus();
+  }, [refreshGazeboStatus]);
 
   const refreshLogs = useCallback(() => {
     getLogs(250)
@@ -2338,6 +2531,38 @@ function App() {
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Export failed");
     }
+  };
+
+  const handleBundleDownload = async () => {
+    try {
+      const bundle = await buildSimulatorBundle(currentDesign());
+      downloadBlob(bundle.fileName, bundle.blob);
+      setStatusMessage("Simulator export bundle downloaded");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Bundle export failed");
+    }
+  };
+
+  const handleCompileGazeboPlugins = async () => {
+    setGazeboCompiling(true);
+    setStatusMessage("Preparing Gazebo plugin build...");
+    try {
+      const result = await compileGazeboPlugins(currentDesign());
+      setGazeboCompileResult(result);
+      setGazeboStatus(result.status);
+      setStatusMessage(result.message);
+      refreshLogs();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Gazebo plugin compilation failed");
+    } finally {
+      setGazeboCompiling(false);
+    }
+  };
+
+  const handleMavlinkCommand = async (command: MavlinkCommandRequest) => {
+    const result = await sendMavlinkCommand(command);
+    setStatusMessage(result.message);
+    refreshLogs();
   };
 
   const handleMissionImportClick = () => {
@@ -3408,6 +3633,10 @@ function App() {
                     <Wind size={16} />
                     <span>Gazebo</span>
                   </button>
+                  <button type="button" onClick={() => void handleBundleDownload()}>
+                    <FilePlus size={16} />
+                    <span>Bundle</span>
+                  </button>
                 </div>
                 <input
                   ref={missionFileInputRef}
@@ -3416,6 +3645,36 @@ function App() {
                   accept=".waypoints,.txt,text/plain"
                   onChange={handleMissionFileSelected}
                 />
+              </section>
+
+              <section className="gazebo-helper">
+                <h2>Gazebo Plugins</h2>
+                <div className="ai-detail-row">
+                  <span>Install</span>
+                  <strong>
+                    {gazeboStatus?.selected
+                      ? `${gazeboStatus.selected.label}${gazeboStatus.selected.version ? ` ${gazeboStatus.selected.version}` : ""}`
+                      : "Not detected"}
+                  </strong>
+                </div>
+                {gazeboStatus?.notes[0] ? <p className="scenario-note">{gazeboStatus.notes[0]}</p> : null}
+                <div className="action-grid gazebo-actions">
+                  <button type="button" onClick={refreshGazeboStatus}>
+                    <RefreshCw size={16} />
+                    <span>Check</span>
+                  </button>
+                  <button type="button" onClick={() => void handleCompileGazeboPlugins()} disabled={gazeboCompiling}>
+                    <Settings size={16} />
+                    <span>{gazeboCompiling ? "Building" : "Compile"}</span>
+                  </button>
+                </div>
+                {gazeboCompileResult ? (
+                  <div className="gazebo-build-output">
+                    <p>{gazeboCompileResult.message}</p>
+                    <code>{gazeboCompileResult.projectDir}</code>
+                    {gazeboCompileResult.steps.at(-1)?.stderr ? <pre>{gazeboCompileResult.steps.at(-1)?.stderr}</pre> : null}
+                  </div>
+                ) : null}
               </section>
 
               <section className="gcs-targets">
@@ -3474,6 +3733,7 @@ function App() {
               onPortChange={setTelemetryPort}
               onStart={() => void handleStartTelemetry()}
               onStop={() => void handleStopTelemetry()}
+              onCommand={handleMavlinkCommand}
             />
           )}
 

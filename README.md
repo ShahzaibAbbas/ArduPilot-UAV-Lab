@@ -56,7 +56,7 @@ chmod +x ./Launch-Ubuntu.sh
 ./Launch-Ubuntu.sh
 ```
 
-The launchers check for Node.js 18 or newer and npm, install Node.js through `winget` on Windows or Homebrew on macOS when available, create the local `data/` and `backups/` folders, install missing npm packages, open `http://127.0.0.1:5173`, and start the app. The Ubuntu launcher reports the exact `apt` commands if Node.js or npm is missing.
+The launchers check for Node.js 18 or newer and npm, install Node.js through `winget` on Windows or Homebrew on macOS when available, create the local `data/` and `backups/` folders, install missing npm packages, and start the app. The Windows launcher opens a fullscreen ArduPilot UAV Lab browser app; move the cursor to the upper-right edge to reveal Minimize and Close. The Ubuntu launcher reports the exact `apt` commands if Node.js or npm is missing.
 
 The API server watches the launcher process. Closing the launcher command window shuts down the server and any SITL or telemetry reader processes started by the app.
 
@@ -71,6 +71,12 @@ Support email: shahzaib.abbas@hotmail.com
 ```powershell
 npm install
 npm run dev
+```
+
+Fullscreen browser app:
+
+```powershell
+npm run app
 ```
 
 Open `http://127.0.0.1:5173`.

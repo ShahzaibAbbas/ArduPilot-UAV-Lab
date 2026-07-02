@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "app": "concurrently -k --success first \"npm:dev:server\" \"npm:dev:client\" \"npm:own:browser\"",
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
     "dev:client": "vite --host 127.0.0.1",
     "dev:server": "node --watch server/index.js",
+    "own:browser": "node scripts/launch-design-browser.mjs",
+    "own:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
     "design:browser": "node scripts/launch-design-browser.mjs",
     "design:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
     "build": "tsc --noEmit && vite build",

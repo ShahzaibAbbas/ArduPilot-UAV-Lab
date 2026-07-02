@@ -103,17 +103,6 @@ function Install-ProjectDependencies {
   }
 }
 
-function Start-BrowserLater {
-  if ($SkipBrowser) {
-    return
-  }
-
-  Start-Job -ScriptBlock {
-    Start-Sleep -Seconds 4
-    Start-Process "http://127.0.0.1:5173"
-  } | Out-Null
-}
-
 Push-Location $ProjectRoot
 try {
   Write-Step "Checking Windows launcher requirements"
@@ -127,10 +116,18 @@ try {
   }
 
   Write-Step "Starting ArduPilot UAV Lab"
-  Write-Host "Open http://127.0.0.1:5173 if the browser does not open automatically."
+  if ($SkipBrowser) {
+    Write-Host "Open http://127.0.0.1:5173 after the server starts."
+  } else {
+    Write-Host "Opening the fullscreen ArduPilot UAV Lab browser app."
+    Write-Host "Move the cursor to the upper-right edge to reveal Minimize and Close."
+  }
   $env:ARDUPILOT_LAUNCHER_PID = [string]$PID
-  Start-BrowserLater
-  npm run dev
+  if ($SkipBrowser) {
+    npm run dev
+  } else {
+    npm run app
+  }
 } finally {
   Remove-Item Env:\ARDUPILOT_LAUNCHER_PID -ErrorAction SilentlyContinue
   Pop-Location

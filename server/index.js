@@ -10,14 +10,16 @@ import {
   generateGazeboWorldArtifact,
   generateJsonBridgeArtifact,
   generateMissionArtifact,
-  generatePrearmArtifact
+  generatePrearmArtifact,
+  generateSimulatorBundleArtifact
 } from "./artifacts.js";
 import { deleteCustomComponent, listCustomComponents, saveCustomComponent } from "./customComponents.js";
 import { listDesigns, saveDesign } from "./designStore.js";
+import { compileGazeboPlugins, gazeboStatus } from "./gazebo.js";
 import { clearLogs, listLogs, loggerError, loggerInfo, loggerWarn, readLogFileTail } from "./logger.js";
 import { buildSitlPlan, generateParamContent, getSystemStatus } from "./sitl.js";
 import { runTerminalCommand } from "./terminal.js";
-import { shutdownTelemetry, startTelemetryListener, stopTelemetryListener, telemetryStatus } from "./telemetry.js";
+import { sendMavlinkCommand, shutdownTelemetry, startTelemetryListener, stopTelemetryListener, telemetryStatus } from "./telemetry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -45,6 +47,16 @@ const locateSchema = z.object({
 
 const telemetryListenerSchema = z.object({
   port: z.number().int().min(1024).max(65535).optional()
+});
+
+const mavlinkCommandSchema = z.object({
+  sysid: z.number().int().min(1).max(255),
+  compid: z.number().int().min(0).max(255).optional(),
+  action: z.enum(["arm", "disarm", "takeoff", "land", "rtl", "mode", "custom"]),
+  mode: z.string().optional(),
+  altitudeM: z.number().min(0).max(10000).optional(),
+  commandId: z.number().int().min(0).max(65535).optional(),
+  params: z.array(z.number()).max(7).optional()
 });
 
 const customComponentSchema = z.object({
@@ -294,6 +306,21 @@ app.delete("/api/telemetry/listener", async (_request, response, next) => {
   }
 });
 
+app.post("/api/telemetry/command", async (request, response, next) => {
+  try {
+    const command = mavlinkCommandSchema.parse(request.body ?? {});
+    const result = await sendMavlinkCommand(command);
+    loggerInfo("mavlink", result.message, {
+      command: result.command,
+      target: result.target,
+      bytes: result.bytes
+    });
+    response.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/sitl/locate", async (request, response, next) => {
   try {
     const { simVehiclePath } = locateSchema.parse(request.body);
@@ -386,6 +413,18 @@ app.post("/api/export/gazebo-world", async (request, response, next) => {
   }
 });
 
+app.post("/api/export/bundle", async (request, response, next) => {
+  try {
+    const design = designSchema.parse(request.body);
+    const bundle = generateSimulatorBundleArtifact(design);
+    response.setHeader("Content-Type", bundle.mimeType);
+    response.setHeader("Content-Disposition", `attachment; filename="${bundle.fileName}"`);
+    response.send(bundle.content);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/export/params", async (request, response, next) => {
   try {
     const design = designSchema.parse(request.body);
@@ -455,6 +494,30 @@ app.delete("/api/sitl/processes/:pid", (request, response) => {
   activeProcesses.delete(pid);
   loggerInfo("sitl", `SITL process stopped`, { pid });
   response.json({ stopped: pid });
+});
+
+app.get("/api/gazebo/status", async (_request, response, next) => {
+  try {
+    response.json(await gazeboStatus());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/gazebo/compile", async (request, response, next) => {
+  try {
+    const design = designSchema.parse(request.body);
+    const result = await compileGazeboPlugins(design);
+    const log = result.compiled ? loggerInfo : loggerWarn;
+    log("gazebo", result.message, {
+      projectDir: result.projectDir,
+      buildDir: result.buildDir,
+      steps: result.steps.map((step) => ({ command: step.command, exitCode: step.exitCode, durationMs: step.durationMs }))
+    });
+    response.json(result);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.use((error, _request, response, _next) => {

@@ -1357,6 +1357,7 @@ button:disabled {
 .connection-legend h2,
 .gcs-targets h2,
 .artifact-panel h2,
+.gazebo-helper h2,
 .mission-test h2,
 .swarm-layout h2,
 .telemetry-listener h2,
@@ -1561,6 +1562,7 @@ button:disabled {
 .mission-test,
 .swarm-layout,
 .artifact-panel,
+.gazebo-helper,
 .telemetry-listener,
 .telemetry-vehicles,
 .custom-library {
@@ -1675,6 +1677,37 @@ button:disabled {
 .artifact-grid button:hover,
 .custom-library-item button:first-child:hover {
   box-shadow: 0 0 0 2px rgba(45, 108, 223, 0.12);
+}
+
+.gazebo-actions {
+  margin: 0;
+}
+
+.gazebo-build-output {
+  display: grid;
+  gap: 7px;
+}
+
+.gazebo-build-output p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.gazebo-build-output code,
+.gazebo-build-output pre {
+  max-height: 140px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: 7px;
+  background: #172026;
+  color: #e7f5eb;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .swarm-map {
@@ -1843,6 +1876,132 @@ button:disabled {
   background: #edf4ff;
   color: var(--blue) !important;
   font-weight: 800;
+}
+
+.telemetry-command-ack {
+  padding: 7px;
+  border-left: 4px solid var(--orange);
+  border-radius: 6px;
+  background: #fff7ed;
+  color: var(--orange) !important;
+  font-weight: 800;
+}
+
+.telemetry-command-ack.ok {
+  border-left-color: var(--green);
+  background: #e7f5eb;
+  color: var(--green) !important;
+}
+
+.mavlink-command-panel {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.mavlink-command-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mavlink-command-title strong,
+.mavlink-command-title span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mavlink-command-title strong {
+  color: var(--text);
+}
+
+.command-action-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.command-action-grid button,
+.mavlink-inline-command button,
+.custom-command button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--text);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.command-action-grid button:disabled,
+.mavlink-inline-command button:disabled,
+.custom-command button:disabled,
+.gazebo-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.command-action-grid button span,
+.mavlink-inline-command button span,
+.custom-command button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mavlink-inline-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 7px;
+  align-items: end;
+}
+
+.mavlink-inline-command .field {
+  margin: 0;
+}
+
+.custom-command {
+  display: grid;
+  gap: 8px;
+}
+
+.custom-command summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.custom-command[open] {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+
+.command-param-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.command-param-grid .field,
+.custom-command > .field {
+  margin: 0;
 }
 
 .log-list,

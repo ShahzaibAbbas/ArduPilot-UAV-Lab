@@ -48,6 +48,77 @@ export interface ArtifactResult {
   mimeType: string;
 }
 
+export interface BinaryArtifactResult {
+  fileName: string;
+  blob: Blob;
+}
+
+export type MavlinkCommandAction = "arm" | "disarm" | "takeoff" | "land" | "rtl" | "mode" | "custom";
+
+export interface MavlinkCommandRequest {
+  sysid: number;
+  compid?: number;
+  action: MavlinkCommandAction;
+  mode?: string;
+  altitudeM?: number;
+  commandId?: number;
+  params?: number[];
+}
+
+export interface MavlinkCommandResult {
+  sent: boolean;
+  label: string;
+  command: number;
+  target: {
+    sysid: number;
+    compid: number;
+  };
+  link: {
+    host: string;
+    port: number;
+    localPort: number;
+    lastPacketAt: string;
+  };
+  bytes: number;
+  message: string;
+}
+
+export interface GazeboStatus {
+  supported: boolean;
+  selected?: {
+    kind: "classic" | "gz-sim";
+    packageName: string;
+    label: string;
+    available: boolean;
+    version?: string;
+  };
+  tools: Record<string, { available: boolean; command: string; version?: string }>;
+  packages: Array<{
+    kind: "classic" | "gz-sim";
+    packageName: string;
+    label: string;
+    available: boolean;
+    version?: string;
+  }>;
+  notes: string[];
+}
+
+export interface GazeboCompileResult {
+  compiled: boolean;
+  status: GazeboStatus;
+  projectDir: string;
+  buildDir: string;
+  files: string[];
+  steps: Array<{
+    command: string;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    durationMs: number;
+  }>;
+  message: string;
+}
+
 export interface TelemetryStatus {
   listener: {
     active: boolean;
@@ -113,6 +184,19 @@ export interface TelemetryStatus {
       severity: number;
       text: string;
     };
+    commandAck?: {
+      command?: number;
+      result: number;
+      resultName: string;
+      progress?: number;
+      receivedAt: string;
+    };
+    link?: {
+      host: string;
+      port: number;
+      localPort: number;
+      lastPacketAt: string;
+    };
   }>;
 }
 
@@ -142,6 +226,11 @@ async function parseResponse<T>(response: Response): Promise<T> {
     throw new Error(message);
   }
   return payload as T;
+}
+
+function fileNameFromDisposition(value: string | null, fallback: string) {
+  const match = value?.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+  return match ? decodeURIComponent(match[1].replace(/^"|"$/g, "")) : fallback;
 }
 
 export async function getSystemStatus() {
@@ -244,6 +333,21 @@ export async function buildGazeboWorldFile(design: UavDesign) {
   );
 }
 
+export async function buildSimulatorBundle(design: UavDesign) {
+  const response = await fetch("/api/export/bundle", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(design)
+  });
+  if (!response.ok) {
+    await parseResponse(response);
+  }
+  return {
+    fileName: fileNameFromDisposition(response.headers.get("Content-Disposition"), "simulator-bundle.zip"),
+    blob: await response.blob()
+  } satisfies BinaryArtifactResult;
+}
+
 export async function buildSitlPlan(design: UavDesign) {
   return parseResponse<{ plan: SitlPlan }>(
     await fetch("/api/sitl/plan", {
@@ -282,6 +386,30 @@ export async function stopTelemetryListener() {
   return parseResponse<TelemetryStatus>(
     await fetch("/api/telemetry/listener", {
       method: "DELETE"
+    })
+  );
+}
+
+export async function sendMavlinkCommand(command: MavlinkCommandRequest) {
+  return parseResponse<MavlinkCommandResult>(
+    await fetch("/api/telemetry/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(command)
+    })
+  );
+}
+
+export async function getGazeboStatus() {
+  return parseResponse<GazeboStatus>(await fetch("/api/gazebo/status"));
+}
+
+export async function compileGazeboPlugins(design: UavDesign) {
+  return parseResponse<GazeboCompileResult>(
+    await fetch("/api/gazebo/compile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(design)
     })
   );
 }
