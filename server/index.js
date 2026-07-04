@@ -11,15 +11,27 @@ import {
   generateJsonBridgeArtifact,
   generateMissionArtifact,
   generatePrearmArtifact,
+  generateBomCsvArtifact,
+  generateBomHtmlArtifact,
   generateSimulatorBundleArtifact
 } from "./artifacts.js";
 import { deleteCustomComponent, listCustomComponents, saveCustomComponent } from "./customComponents.js";
 import { listDesigns, saveDesign } from "./designStore.js";
 import { compileGazeboPlugins, gazeboStatus } from "./gazebo.js";
 import { clearLogs, listLogs, loggerError, loggerInfo, loggerWarn, readLogFileTail } from "./logger.js";
-import { buildSitlPlan, generateParamContent, getSystemStatus } from "./sitl.js";
+import { setupDiagnostics } from "./setup.js";
+import { buildSitlPlan, generateParamContent, generateParamExplanation, getSystemStatus } from "./sitl.js";
 import { runTerminalCommand } from "./terminal.js";
-import { sendMavlinkCommand, shutdownTelemetry, startTelemetryListener, stopTelemetryListener, telemetryStatus } from "./telemetry.js";
+import {
+  downloadMission,
+  missionSyncStatus,
+  sendMavlinkCommand,
+  shutdownTelemetry,
+  startTelemetryListener,
+  stopTelemetryListener,
+  telemetryStatus,
+  uploadMission
+} from "./telemetry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -57,6 +69,12 @@ const mavlinkCommandSchema = z.object({
   altitudeM: z.number().min(0).max(10000).optional(),
   commandId: z.number().int().min(0).max(65535).optional(),
   params: z.array(z.number()).max(7).optional()
+});
+
+const missionSyncSchema = z.object({
+  sysid: z.number().int().min(1).max(255),
+  compid: z.number().int().min(0).max(255).optional(),
+  missionText: z.string().optional()
 });
 
 const customComponentSchema = z.object({
@@ -285,6 +303,14 @@ app.get("/api/system", async (_request, response, next) => {
   }
 });
 
+app.get("/api/setup/diagnostics", async (_request, response, next) => {
+  try {
+    response.json(await setupDiagnostics(projectRoot));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/telemetry", (_request, response) => {
   response.json(telemetryStatus());
 });
@@ -316,6 +342,32 @@ app.post("/api/telemetry/command", async (request, response, next) => {
       bytes: result.bytes
     });
     response.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/mission/status", (_request, response) => {
+  response.json({ mission: missionSyncStatus() });
+});
+
+app.post("/api/mission/upload", async (request, response, next) => {
+  try {
+    const payload = missionSyncSchema.extend({ missionText: z.string().min(1) }).parse(request.body ?? {});
+    const result = await uploadMission(payload);
+    loggerInfo("mavlink", result.message, { target: result.target, direction: result.direction });
+    response.json({ mission: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/mission/download", async (request, response, next) => {
+  try {
+    const payload = missionSyncSchema.parse(request.body ?? {});
+    const result = await downloadMission(payload);
+    loggerInfo("mavlink", result.message, { target: result.target, direction: result.direction });
+    response.json({ mission: result });
   } catch (error) {
     next(error);
   }
@@ -395,6 +447,24 @@ app.post("/api/export/prearm", async (request, response, next) => {
   }
 });
 
+app.post("/api/export/bom/csv", async (request, response, next) => {
+  try {
+    const design = designSchema.parse(request.body);
+    response.json(generateBomCsvArtifact(design));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/export/bom/html", async (request, response, next) => {
+  try {
+    const design = designSchema.parse(request.body);
+    response.json(generateBomHtmlArtifact(design));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/export/json-bridge", async (request, response, next) => {
   try {
     const design = designSchema.parse(request.body);
@@ -430,6 +500,15 @@ app.post("/api/export/params", async (request, response, next) => {
     const design = designSchema.parse(request.body);
     const fileName = `${design.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "uav-design"}.param`;
     response.json({ fileName, content: generateParamContent(design) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/export/params/explain", async (request, response, next) => {
+  try {
+    const design = designSchema.parse(request.body);
+    response.json({ explanations: generateParamExplanation(design) });
   } catch (error) {
     next(error);
   }

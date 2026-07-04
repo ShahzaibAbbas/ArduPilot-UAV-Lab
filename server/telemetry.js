@@ -14,6 +14,19 @@ let listener = {
 
 const vehicles = new Map();
 let mavlinkSequence = 0;
+let uploadSession;
+let downloadSession;
+let missionSync = {
+  active: false,
+  direction: undefined,
+  message: "Mission sync idle",
+  updatedAt: undefined,
+  target: undefined,
+  uploadedCount: 0,
+  downloadedCount: 0,
+  expectedCount: 0,
+  missionText: undefined
+};
 
 const mavTypes = {
   0: "Generic",
@@ -294,6 +307,7 @@ function onMessage(message, remote) {
 
   for (const packet of parseMavlinkDatagram(message)) {
     updateVehicle(packet, remote);
+    handleMissionPacket(packet, remote);
   }
 }
 
@@ -309,6 +323,27 @@ function x25Crc(buffer, extra) {
     crc = crcAccumulate(byte, crc);
   }
   return crcAccumulate(extra, crc);
+}
+
+function encodeMavlink2Message({ msgid, payload, crcExtra, sourceSystem = 255, sourceComponent = 190 }) {
+  const header = Buffer.from([
+    0xfd,
+    payload.length,
+    0,
+    0,
+    mavlinkSequence,
+    sourceSystem,
+    sourceComponent,
+    msgid & 0xff,
+    (msgid >> 8) & 0xff,
+    (msgid >> 16) & 0xff
+  ]);
+  mavlinkSequence = (mavlinkSequence + 1) & 0xff;
+
+  const checksum = x25Crc(Buffer.concat([header.subarray(1), payload]), crcExtra);
+  const crc = Buffer.alloc(2);
+  crc.writeUInt16LE(checksum);
+  return Buffer.concat([header, payload, crc]);
 }
 
 function encodeCommandLong({
@@ -330,24 +365,293 @@ function encodeCommandLong({
   payload.writeUInt8(targetComponent, 31);
   payload.writeUInt8(confirmation, 32);
 
-  const header = Buffer.from([
-    0xfd,
-    payload.length,
-    0,
-    0,
-    mavlinkSequence,
-    sourceSystem,
-    sourceComponent,
-    76,
-    0,
-    0
-  ]);
-  mavlinkSequence = (mavlinkSequence + 1) & 0xff;
+  return encodeMavlink2Message({ msgid: 76, payload, crcExtra: 152, sourceSystem, sourceComponent });
+}
 
-  const checksum = x25Crc(Buffer.concat([header.subarray(1), payload]), 152);
-  const crc = Buffer.alloc(2);
-  crc.writeUInt16LE(checksum);
-  return Buffer.concat([header, payload, crc]);
+function missionItemsFromText(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const items = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("QGC")) {
+      continue;
+    }
+
+    const columns = trimmed.split(/\s+/);
+    if (columns.length < 12) {
+      continue;
+    }
+
+    const seq = Number(columns[0]);
+    const current = Number(columns[1]);
+    const frame = Number(columns[2]);
+    const command = Number(columns[3]);
+    const params = columns.slice(4, 8).map((value) => Number(value));
+    const lat = Number(columns[8]);
+    const lon = Number(columns[9]);
+    const z = Number(columns[10]);
+    const autocontinue = Number(columns[11]);
+
+    if (![seq, current, frame, command, lat, lon, z, autocontinue, ...params].every(Number.isFinite)) {
+      continue;
+    }
+
+    items.push({
+      seq,
+      current,
+      frame,
+      command,
+      params,
+      x: Math.round(lat * 10000000),
+      y: Math.round(lon * 10000000),
+      z,
+      autocontinue
+    });
+  }
+
+  if (items.length === 0) {
+    throw new Error("Mission text did not contain QGC WPL mission items.");
+  }
+
+  return items.sort((left, right) => left.seq - right.seq);
+}
+
+function missionTextFromItems(items) {
+  const lines = ["QGC WPL 110"];
+  for (const item of items.sort((left, right) => left.seq - right.seq)) {
+    const lat = item.x / 10000000;
+    const lon = item.y / 10000000;
+    lines.push(
+      [
+        item.seq,
+        item.current,
+        item.frame,
+        item.command,
+        ...item.params.map((value) => Number(value || 0).toFixed(8)),
+        lat.toFixed(7),
+        lon.toFixed(7),
+        Number(item.z || 0).toFixed(6),
+        item.autocontinue
+      ].join("\t")
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function encodeMissionCount(targetSystem, targetComponent, count) {
+  const payload = Buffer.alloc(5);
+  payload.writeUInt16LE(count, 0);
+  payload.writeUInt8(targetSystem, 2);
+  payload.writeUInt8(targetComponent, 3);
+  payload.writeUInt8(0, 4);
+  return encodeMavlink2Message({ msgid: 44, payload, crcExtra: 221 });
+}
+
+function encodeMissionRequestList(targetSystem, targetComponent) {
+  const payload = Buffer.alloc(3);
+  payload.writeUInt8(targetSystem, 0);
+  payload.writeUInt8(targetComponent, 1);
+  payload.writeUInt8(0, 2);
+  return encodeMavlink2Message({ msgid: 43, payload, crcExtra: 132 });
+}
+
+function encodeMissionRequestInt(targetSystem, targetComponent, seq) {
+  const payload = Buffer.alloc(5);
+  payload.writeUInt16LE(seq, 0);
+  payload.writeUInt8(targetSystem, 2);
+  payload.writeUInt8(targetComponent, 3);
+  payload.writeUInt8(0, 4);
+  return encodeMavlink2Message({ msgid: 51, payload, crcExtra: 196 });
+}
+
+function encodeMissionAck(targetSystem, targetComponent, type = 0) {
+  const payload = Buffer.alloc(4);
+  payload.writeUInt8(targetSystem, 0);
+  payload.writeUInt8(targetComponent, 1);
+  payload.writeUInt8(type, 2);
+  payload.writeUInt8(0, 3);
+  return encodeMavlink2Message({ msgid: 47, payload, crcExtra: 153 });
+}
+
+function encodeMissionItemInt(targetSystem, targetComponent, item) {
+  const payload = Buffer.alloc(38);
+  for (let index = 0; index < 4; index += 1) {
+    payload.writeFloatLE(Number(item.params[index] || 0), index * 4);
+  }
+  payload.writeInt32LE(Number(item.x || 0), 16);
+  payload.writeInt32LE(Number(item.y || 0), 20);
+  payload.writeFloatLE(Number(item.z || 0), 24);
+  payload.writeUInt16LE(item.seq, 28);
+  payload.writeUInt16LE(item.command, 30);
+  payload.writeUInt8(targetSystem, 32);
+  payload.writeUInt8(targetComponent, 33);
+  payload.writeUInt8(item.frame, 34);
+  payload.writeUInt8(item.current ? 1 : 0, 35);
+  payload.writeUInt8(item.autocontinue ? 1 : 0, 36);
+  payload.writeUInt8(0, 37);
+  return encodeMavlink2Message({ msgid: 73, payload, crcExtra: 38 });
+}
+
+function parseMissionRequestSeq(packet) {
+  if ((packet.msgid !== 40 && packet.msgid !== 51) || packet.payload.length < 4) {
+    return undefined;
+  }
+  return packet.payload.readUInt16LE(0);
+}
+
+function parseMissionCount(packet) {
+  if (packet.msgid !== 44 || packet.payload.length < 2) {
+    return undefined;
+  }
+  return packet.payload.readUInt16LE(0);
+}
+
+function parseMissionAck(packet) {
+  if (packet.msgid !== 47 || packet.payload.length < 3) {
+    return undefined;
+  }
+  return packet.payload.readUInt8(2);
+}
+
+function parseMissionItemInt(packet) {
+  if (packet.msgid !== 73 || packet.payload.length < 37) {
+    return undefined;
+  }
+  return {
+    params: [0, 4, 8, 12].map((offset) => packet.payload.readFloatLE(offset)),
+    x: packet.payload.readInt32LE(16),
+    y: packet.payload.readInt32LE(20),
+    z: packet.payload.readFloatLE(24),
+    seq: packet.payload.readUInt16LE(28),
+    command: packet.payload.readUInt16LE(30),
+    frame: packet.payload.readUInt8(34),
+    current: packet.payload.readUInt8(35),
+    autocontinue: packet.payload.readUInt8(36)
+  };
+}
+
+async function sendToVehicle(vehicle, packet) {
+  if (!socket || !listener.active) {
+    throw new Error("Start the MAVLink telemetry reader before mission sync.");
+  }
+  if (!vehicle.link) {
+    throw new Error(`No UDP return address is known for SYS ${vehicle.sysid}.`);
+  }
+  await new Promise((resolve, reject) => {
+    socket.send(packet, vehicle.link.port, vehicle.link.host, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function missionTargetMatches(session, packet) {
+  return session && packet.sysid === session.sysid && (!session.compid || packet.compid === session.compid);
+}
+
+function setMissionSync(next) {
+  missionSync = {
+    ...missionSync,
+    ...next,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function handleMissionPacket(packet) {
+  if (uploadSession && missionTargetMatches(uploadSession, packet)) {
+    const requestedSeq = parseMissionRequestSeq(packet);
+    if (typeof requestedSeq === "number") {
+      const item = uploadSession.items[requestedSeq];
+      if (item) {
+        const payload = encodeMissionItemInt(uploadSession.sysid, uploadSession.compid || packet.compid || 1, item);
+        void sendToVehicle(uploadSession.vehicle, payload)
+          .then(() => {
+            setMissionSync({
+              active: true,
+              direction: "upload",
+              message: `Sent mission item ${requestedSeq + 1}/${uploadSession.items.length}`,
+              uploadedCount: requestedSeq + 1,
+              expectedCount: uploadSession.items.length
+            });
+          })
+          .catch((error) => {
+            setMissionSync({ active: false, direction: "upload", message: error.message });
+            uploadSession = undefined;
+          });
+      }
+      return;
+    }
+
+    const ack = parseMissionAck(packet);
+    if (typeof ack === "number") {
+      const ok = ack === 0;
+      setMissionSync({
+        active: false,
+        direction: "upload",
+        message: ok ? `Mission upload accepted (${uploadSession.items.length} items).` : `Mission upload returned ACK ${ack}.`,
+        uploadedCount: ok ? uploadSession.items.length : missionSync.uploadedCount,
+        expectedCount: uploadSession.items.length
+      });
+      uploadSession = undefined;
+    }
+  }
+
+  if (downloadSession && missionTargetMatches(downloadSession, packet)) {
+    const count = parseMissionCount(packet);
+    if (typeof count === "number") {
+      downloadSession.expectedCount = count;
+      downloadSession.items = [];
+      setMissionSync({
+        active: true,
+        direction: "download",
+        message: `Vehicle reports ${count} mission items.`,
+        expectedCount: count,
+        downloadedCount: 0
+      });
+      const request = encodeMissionRequestInt(downloadSession.sysid, downloadSession.compid || packet.compid || 1, 0);
+      void sendToVehicle(downloadSession.vehicle, request).catch((error) => {
+        setMissionSync({ active: false, direction: "download", message: error.message });
+        downloadSession = undefined;
+      });
+      return;
+    }
+
+    const item = parseMissionItemInt(packet);
+    if (item) {
+      downloadSession.items[item.seq] = item;
+      const downloaded = downloadSession.items.filter(Boolean).length;
+      if (downloaded >= downloadSession.expectedCount) {
+        const ack = encodeMissionAck(downloadSession.sysid, downloadSession.compid || packet.compid || 1, 0);
+        void sendToVehicle(downloadSession.vehicle, ack).catch(() => undefined);
+        const missionText = missionTextFromItems(downloadSession.items.filter(Boolean));
+        setMissionSync({
+          active: false,
+          direction: "download",
+          message: `Mission download complete (${downloaded} items).`,
+          downloadedCount: downloaded,
+          expectedCount: downloadSession.expectedCount,
+          missionText
+        });
+        downloadSession = undefined;
+      } else {
+        const request = encodeMissionRequestInt(downloadSession.sysid, downloadSession.compid || packet.compid || 1, downloaded);
+        void sendToVehicle(downloadSession.vehicle, request).catch((error) => {
+          setMissionSync({ active: false, direction: "download", message: error.message });
+          downloadSession = undefined;
+        });
+        setMissionSync({
+          active: true,
+          direction: "download",
+          message: `Received mission item ${downloaded}/${downloadSession.expectedCount}`,
+          downloadedCount: downloaded
+        });
+      }
+    }
+  }
 }
 
 const ardupilotModes = {
@@ -545,7 +849,85 @@ export async function sendMavlinkCommand(request) {
   };
 }
 
+export function missionSyncStatus() {
+  return { ...missionSync };
+}
+
+export async function uploadMission(request) {
+  const targetSystem = Number(request.sysid);
+  const requestedComponent = Number(request.compid || 0);
+  const items = missionItemsFromText(request.missionText);
+  const vehicle = findVehicle(targetSystem, requestedComponent);
+  if (!vehicle) {
+    throw new Error(`No live vehicle with system id ${targetSystem} has been seen.`);
+  }
+
+  uploadSession = {
+    sysid: targetSystem,
+    compid: requestedComponent || vehicle.compid || 1,
+    vehicle,
+    items
+  };
+  downloadSession = undefined;
+  const countPacket = encodeMissionCount(uploadSession.sysid, uploadSession.compid, items.length);
+  await sendToVehicle(vehicle, countPacket);
+  setMissionSync({
+    active: true,
+    direction: "upload",
+    target: { sysid: uploadSession.sysid, compid: uploadSession.compid },
+    message: `Mission upload started (${items.length} items). Waiting for vehicle requests.`,
+    uploadedCount: 0,
+    downloadedCount: 0,
+    expectedCount: items.length,
+    missionText: undefined
+  });
+  return missionSyncStatus();
+}
+
+export async function downloadMission(request) {
+  const targetSystem = Number(request.sysid);
+  const requestedComponent = Number(request.compid || 0);
+  const vehicle = findVehicle(targetSystem, requestedComponent);
+  if (!vehicle) {
+    throw new Error(`No live vehicle with system id ${targetSystem} has been seen.`);
+  }
+
+  downloadSession = {
+    sysid: targetSystem,
+    compid: requestedComponent || vehicle.compid || 1,
+    vehicle,
+    expectedCount: 0,
+    items: []
+  };
+  uploadSession = undefined;
+  const requestPacket = encodeMissionRequestList(downloadSession.sysid, downloadSession.compid);
+  await sendToVehicle(vehicle, requestPacket);
+  setMissionSync({
+    active: true,
+    direction: "download",
+    target: { sysid: downloadSession.sysid, compid: downloadSession.compid },
+    message: "Mission download requested. Waiting for vehicle mission count.",
+    uploadedCount: 0,
+    downloadedCount: 0,
+    expectedCount: 0,
+    missionText: undefined
+  });
+  return missionSyncStatus();
+}
+
 export async function shutdownTelemetry() {
   await stopTelemetryListener();
   vehicles.clear();
+  uploadSession = undefined;
+  downloadSession = undefined;
+  setMissionSync({
+    active: false,
+    direction: undefined,
+    message: "Mission sync idle",
+    target: undefined,
+    uploadedCount: 0,
+    downloadedCount: 0,
+    expectedCount: 0,
+    missionText: undefined
+  });
 }

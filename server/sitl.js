@@ -327,6 +327,165 @@ export function generateParamContent(design) {
   return `${lines.join("\n")}\n`;
 }
 
+export function generateParamExplanation(design) {
+  const settings = design.settings ?? {};
+  const battery = firstNode(design, "battery");
+  const esc = firstNode(design, "esc");
+  const airspeed = firstNode(design, "airspeed-sensor");
+  const opticalFlow = firstNode(design, "optical-flow");
+  const parachute = firstNode(design, "parachute");
+  const cells = Number(getProperty(battery, "cells", 4));
+  const capacity = Number(getProperty(battery, "capacityMah", 5200));
+  const lowPercent = clamp(numberValue(settings.batteryLowPercent, 20), 1, 80);
+  const criticalPercent = clamp(numberValue(settings.batteryCriticalPercent, 10), 0, Math.max(0, lowPercent - 1));
+  const explanations = [
+    {
+      parameter: "BATT_MONITOR",
+      value: "4",
+      source: "Power module",
+      reason: "Enables analog voltage/current monitoring for the selected power-module style."
+    },
+    {
+      parameter: "BATT_CAPACITY",
+      value: String(capacity),
+      source: battery?.data?.label ?? "Battery default",
+      reason: "Uses the selected battery capacity in mAh for battery remaining and failsafe calculations."
+    },
+    {
+      parameter: "BATT_LOW_VOLT",
+      value: Math.max(3.5 * cells, 0).toFixed(1),
+      source: `${cells}S battery`,
+      reason: "Sets a conservative low-voltage threshold at about 3.5 V per cell."
+    },
+    {
+      parameter: "BATT_LOW_MAH",
+      value: String(Math.round(capacity * (lowPercent / 100))),
+      source: "Low reserve setting",
+      reason: `Converts the configured ${lowPercent}% low reserve into consumed-capacity threshold units.`
+    },
+    {
+      parameter: "BATT_FS_LOW_ACT",
+      value: String(failsafeActionValue(settings.batteryFailsafeAction)),
+      source: "Low battery action",
+      reason: `Maps ${settings.batteryFailsafeAction || "Warn"} to ArduPilot's low battery failsafe action value.`
+    },
+    {
+      parameter: "BATT_CRT_VOLT",
+      value: Math.max(3.3 * cells, 0).toFixed(1),
+      source: `${cells}S battery`,
+      reason: "Sets a critical-voltage threshold at about 3.3 V per cell."
+    },
+    {
+      parameter: "BATT_CRT_MAH",
+      value: String(Math.round(capacity * (criticalPercent / 100))),
+      source: "Critical reserve setting",
+      reason: `Converts the configured ${criticalPercent}% critical reserve into consumed-capacity threshold units.`
+    },
+    {
+      parameter: "BATT_FS_CRT_ACT",
+      value: String(failsafeActionValue(settings.batteryCriticalAction)),
+      source: "Critical battery action",
+      reason: `Maps ${settings.batteryCriticalAction || "Land"} to ArduPilot's critical battery failsafe action value.`
+    },
+    {
+      parameter: "MOT_PWM_TYPE",
+      value: String(pwmTypeFor(getProperty(esc, "protocol", "PWM"))),
+      source: esc?.data?.label ?? "ESC default",
+      reason: "Selects the motor output protocol from the first ESC protocol property."
+    },
+    {
+      parameter: "GPS_TYPE",
+      value: nodeCount(design, "gps") > 0 ? "1" : "0",
+      source: "GPS component count",
+      reason: "Enables the default simulated GPS driver when a GPS component exists."
+    },
+    {
+      parameter: "COMPASS_ENABLE",
+      value: nodeCount(design, "compass") > 0 ? "1" : "0",
+      source: "Compass component count",
+      reason: "Enables compass support when the design includes a compass."
+    },
+    {
+      parameter: "RNGFND1_TYPE",
+      value: nodeCount(design, "rangefinder") > 0 ? "25" : "0",
+      source: "Rangefinder component count",
+      reason: "Adds a starter rangefinder type when a rangefinder is present."
+    },
+    {
+      parameter: "LOG_DISARMED",
+      value: "1",
+      source: "Lab default",
+      reason: "Keeps logs available during bench and pre-arm simulation checks."
+    }
+  ];
+
+  if (design.settings?.vehicle === "ArduCopter") {
+    explanations.push({
+      parameter: "ARMING_CHECK",
+      value: "1",
+      source: "Vehicle type",
+      reason: "Keeps standard ArduCopter arming checks enabled for simulator test runs."
+    });
+  }
+
+  if (airspeed) {
+    explanations.push(
+      {
+        parameter: "ARSPD_TYPE",
+        value: String(airspeedTypeValue(airspeed)),
+        source: airspeed.data?.label ?? "Airspeed sensor",
+        reason: "Maps the selected airspeed sensor interface to an ArduPilot starter type."
+      },
+      {
+        parameter: "ARSPD_USE",
+        value: "1",
+        source: airspeed.data?.label ?? "Airspeed sensor",
+        reason: "Enables airspeed use for fixed-wing and wind-aware test scenarios."
+      },
+      {
+        parameter: "ARSPD_RATIO",
+        value: String(numberValue(getProperty(airspeed, "ratio", 2), 2)),
+        source: airspeed.data?.label ?? "Airspeed sensor",
+        reason: "Uses the component ratio property as the initial airspeed calibration ratio."
+      }
+    );
+  }
+
+  if (opticalFlow) {
+    explanations.push({
+      parameter: "FLOW_TYPE",
+      value: String(opticalFlowTypeValue(opticalFlow)),
+      source: opticalFlow.data?.label ?? "Optical flow",
+      reason: "Maps the selected optical-flow interface to an ArduPilot starter type."
+    });
+  }
+
+  if (parachute) {
+    explanations.push(
+      {
+        parameter: "CHUTE_ENABLED",
+        value: "1",
+        source: parachute.data?.label ?? "Parachute",
+        reason: "Enables recovery parachute support when recovery hardware is present."
+      },
+      {
+        parameter: "CHUTE_ALT_MIN",
+        value: String(numberValue(getProperty(parachute, "minAltitudeM", 30), 30)),
+        source: parachute.data?.label ?? "Parachute",
+        reason: "Uses the parachute minimum-altitude property for starter recovery constraints."
+      },
+      {
+        parameter: "CHUTE_CRT_SINK",
+        value: String(numberValue(getProperty(parachute, "criticalSinkMps", 10), 10)),
+        source: parachute.data?.label ?? "Parachute",
+        reason: "Uses the parachute critical-sink property for starter recovery constraints."
+      }
+    );
+  }
+
+  return explanations;
+}
+
 export async function writeParamFile(design) {
   await mkdir(exportsDir, { recursive: true });
   const safeName = String(design.name || "uav-design")

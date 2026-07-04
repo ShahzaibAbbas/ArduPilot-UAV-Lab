@@ -74,8 +74,11 @@ import {
   productSpecProperties
 } from "./domain/componentCatalog";
 import { createStarterDesign } from "./domain/starterDesign";
+import { productTemplates } from "./domain/productTemplates";
 import { expectedMotorCount, validateDesign } from "./domain/validators";
 import {
+  buildBomCsvFile,
+  buildBomHtmlFile,
   buildGazeboWorldFile,
   buildJsonBridgeFile,
   buildMissionFile,
@@ -86,8 +89,12 @@ import {
   clearLogs,
   compileGazeboPlugins,
   deleteCustomComponent,
+  downloadMission,
+  explainParamFile,
   getGazeboStatus,
   getLogs,
+  getMissionStatus,
+  getSetupDiagnostics,
   getTelemetryStatus,
   getSystemStatus,
   launchSitl,
@@ -99,13 +106,17 @@ import {
   runTerminalCommand,
   startTelemetryListener,
   stopTelemetryListener,
+  uploadMission,
   updateSoftware,
   type AppLogEntry,
   type ArtifactResult,
   type CustomComponentTemplate,
   type GazeboCompileResult,
   type GazeboStatus,
+  type MissionSyncStatus,
   type MavlinkCommandRequest,
+  type ParamExplanation,
+  type SetupDiagnostics,
   type SitlPlan,
   type SystemStatus,
   type TerminalResult,
@@ -134,7 +145,18 @@ const iconMap = {
   Frame: Boxes
 };
 
-type AppTab = "inspector" | "validation" | "simulation" | "telemetry" | "logs" | "terminal" | "performance";
+type AppTab =
+  | "inspector"
+  | "validation"
+  | "simulation"
+  | "mission"
+  | "telemetry"
+  | "logs"
+  | "terminal"
+  | "performance"
+  | "bom"
+  | "params"
+  | "compare";
 type ObjectContextMenu =
   | { kind: "node"; nodeId: string; x: number; y: number }
   | { kind: "edge"; edgeId: string; x: number; y: number };
@@ -894,6 +916,180 @@ function buildGuideFor(nodes: DesignNode[], settings: SimulationSettings) {
   };
 }
 
+interface AutoWireSuggestion {
+  id: string;
+  title: string;
+  sourceId: string;
+  sourceHandle: string;
+  targetId: string;
+  targetHandle: string;
+  signal: SignalKind;
+}
+
+function autoWireSuggestions(nodes: DesignNode[], edges: DesignEdge[]): AutoWireSuggestion[] {
+  const suggestions: AutoWireSuggestion[] = [];
+  const first = (type: string) => firstNodeByType(nodes, type);
+  const byType = (type: string) => nodesByType(nodes, type);
+  const connectionKey = (sourceId: string, sourceHandle: string, targetId: string, targetHandle: string) =>
+    `${sourceId}:${sourceHandle}->${targetId}:${targetHandle}`;
+  const existing = new Set(edges.map((edge) => connectionKey(edge.source, edge.sourceHandle ?? "", edge.target, edge.targetHandle ?? "")));
+
+  const add = (title: string, source: DesignNode | undefined, sourceHandle: string, target: DesignNode | undefined, targetHandle: string) => {
+    if (!source || !target) {
+      return;
+    }
+    const key = connectionKey(source.id, sourceHandle, target.id, targetHandle);
+    if (existing.has(key) || suggestions.some((suggestion) => suggestion.id === key)) {
+      return;
+    }
+    const candidate = {
+      source: source.id,
+      sourceHandle,
+      target: target.id,
+      targetHandle
+    } as Connection;
+    if (!checkPortConnection(candidate, nodes).valid) {
+      return;
+    }
+    const sourcePort = getPort(source.data.componentType, sourceHandle);
+    if (!sourcePort) {
+      return;
+    }
+    suggestions.push({
+      id: key,
+      title,
+      sourceId: source.id,
+      sourceHandle,
+      targetId: target.id,
+      targetHandle,
+      signal: sourcePort.kind
+    });
+  };
+
+  const frame = first("frame");
+  const flightController = first("flight-controller");
+  const battery = first("battery");
+  const powerModule = first("power-module");
+  const escs = byType("esc");
+  const motors = byType("motor");
+
+  add("Battery feeds power module", battery, "power-out", powerModule, "power-in");
+  add("Power module feeds flight controller", powerModule, "power-out", flightController, "power-in");
+  add("Power telemetry to flight controller ADC", powerModule, "analog-out", flightController, "analog-in");
+  add("GPS UART to flight controller", first("gps"), "uart-out", flightController, "uart-in");
+  add("Compass I2C to flight controller", first("compass"), "i2c-out", flightController, "i2c-in");
+  add("Telemetry radio on flight controller UART", flightController, "uart-out", first("telemetry-radio"), "uart-in");
+  add("Companion computer MAVLink UART", flightController, "uart-out", first("companion-computer"), "uart-in");
+  add("Camera video to companion computer", first("camera"), "video-out", first("companion-computer"), "video-in");
+  add("Gimbal mounts camera", first("gimbal"), "mount-out", first("camera"), "mount-in");
+  add("ADSB/Remote ID to flight controller", first("adsb-remote-id"), "uart-out", flightController, "uart-in");
+  add("Parachute trigger from flight controller", flightController, "pwm-out", first("parachute"), "pwm-in");
+  add("Buzzer trigger from flight controller", flightController, "pwm-out", first("buzzer"), "pwm-in");
+  add("Optical flow mounted to frame", frame, "mount-out", first("optical-flow"), "mount-in");
+  add("Airspeed sensor mounted to frame", frame, "mount-out", first("airspeed-sensor"), "mount-in");
+  add("Gimbal mounted to frame", frame, "mount-out", first("gimbal"), "mount-in");
+  add("Rangefinder I2C to flight controller", first("rangefinder"), "i2c-out", flightController, "i2c-in");
+  add("Optical flow I2C to flight controller", first("optical-flow"), "i2c-out", flightController, "i2c-in");
+  add("Airspeed sensor I2C to flight controller", first("airspeed-sensor"), "i2c-out", flightController, "i2c-in");
+
+  for (const [index, esc] of escs.entries()) {
+    add(`${esc.data.label} main power`, powerModule, "power-out", esc, "power-in");
+    add(`${esc.data.label} PWM signal`, flightController, "pwm-out", esc, "pwm-in");
+    add(`${motors[index]?.data.label ?? `Motor ${index + 1}`} driven by ${esc.data.label}`, esc, "power-out", motors[index], "power-in");
+  }
+
+  for (const motor of motors) {
+    add(`${motor.data.label} mounted to frame`, frame, "mount-out", motor, "mount-in");
+  }
+
+  return suggestions;
+}
+
+interface BomRow {
+  id: string;
+  componentType: string;
+  label: string;
+  manufacturer: string;
+  model: string;
+  partNumber: string;
+  massG: number;
+  unitCostUsd: number;
+  notes: string;
+}
+
+function bomRowsFor(nodes: DesignNode[]): BomRow[] {
+  return nodes.map((node) => {
+    const mass = estimateMass(node);
+    const properties = node.data.properties;
+    return {
+      id: node.id,
+      componentType: node.data.componentType,
+      label: node.data.label,
+      manufacturer: String(properties.specManufacturer ?? ""),
+      model: String(properties.specModel || properties.model || properties.board || ""),
+      partNumber: String(properties.specPartNumber ?? ""),
+      massG: Math.round(mass.massG * 10) / 10,
+      unitCostUsd: Math.round(finiteNumber(properties.specUnitCostUsd, 0) * 100) / 100,
+      notes: String(properties.specNotes ?? "")
+    };
+  });
+}
+
+interface ScenarioRunResult {
+  ranAt: string;
+  scenario: SimulationSettings["testScenario"];
+  passed: boolean;
+  checks: Array<{ label: string; passed: boolean; detail: string }>;
+}
+
+function scenarioRunFor(nodes: DesignNode[], edges: DesignEdge[], settings: SimulationSettings, estimate: PerformanceEstimate): ScenarioRunResult {
+  const validation = validateDesign(nodes, edges, settings);
+  const hasOpticalFlow = nodesByType(nodes, "optical-flow").length > 0;
+  const hasRangefinder = nodesByType(nodes, "rangefinder").length > 0;
+  const checks = [
+    {
+      label: "Validation errors",
+      passed: validation.counts.error === 0,
+      detail: validation.counts.error === 0 ? "No blocking design errors" : `${validation.counts.error} blocking issue(s)`
+    },
+    {
+      label: "Battery threshold order",
+      passed: settings.batteryCriticalPercent < settings.batteryLowPercent,
+      detail: `${settings.batteryCriticalPercent}% critical below ${settings.batteryLowPercent}% low`
+    },
+    {
+      label: "Mission reserve",
+      passed: estimate.rangeKm === 0 || estimate.missionReservePercent >= 20,
+      detail:
+        estimate.rangeKm === 0
+          ? "Range unavailable until propulsion and battery data are complete"
+          : `${Math.round(estimate.missionReservePercent)}% estimated reserve`
+    },
+    {
+      label: "Scenario sensors",
+      passed: settings.testScenario !== "gps-denied" || (hasOpticalFlow && hasRangefinder),
+      detail:
+        settings.testScenario === "gps-denied"
+          ? hasOpticalFlow && hasRangefinder
+            ? "Optical flow and rangefinder present"
+            : "GPS-denied checks need optical flow plus rangefinder"
+          : "No additional GPS-denied sensor gate for this scenario"
+    },
+    {
+      label: "Wind envelope",
+      passed: settings.windGustMps <= 0 || settings.windGustMps <= Math.max(estimate.maxSpeedMps * 0.75, 1),
+      detail: settings.windGustMps > 0 ? `${settings.windGustMps} m/s gust vs ${formatMetric(estimate.maxSpeedMps, 1)} m/s estimate` : "No gust configured"
+    }
+  ];
+
+  return {
+    ranAt: new Date().toISOString(),
+    scenario: settings.testScenario,
+    passed: checks.every((check) => check.passed),
+    checks
+  };
+}
+
 interface MassEstimate {
   nodeId: string;
   label: string;
@@ -1625,6 +1821,8 @@ function TelemetryPanel({
         {panelMessage ? <p className="scenario-note">{panelMessage}</p> : null}
       </section>
 
+      <TelemetryMap status={status} />
+
       <section className="telemetry-vehicles">
         <h2>Live Vehicles</h2>
         {vehicles.length === 0 ? (
@@ -1927,6 +2125,349 @@ function TerminalPanel({
   );
 }
 
+function TelemetryMap({ status }: { status: TelemetryStatus | null }) {
+  const [tracks, setTracks] = useState<Record<string, Array<{ lat: number; lon: number }>>>({});
+  const vehicles = status?.vehicles ?? [];
+
+  useEffect(() => {
+    setTracks((current) => {
+      const next = { ...current };
+      for (const vehicle of vehicles) {
+        const position = vehicle.position ?? vehicle.gps;
+        if (typeof position?.lat !== "number" || typeof position.lon !== "number") {
+          continue;
+        }
+        const track = next[vehicle.id] ?? [];
+        const last = track.at(-1);
+        if (!last || Math.abs(last.lat - position.lat) > 0.000001 || Math.abs(last.lon - position.lon) > 0.000001) {
+          next[vehicle.id] = [...track, { lat: position.lat, lon: position.lon }].slice(-80);
+        }
+      }
+      return next;
+    });
+  }, [vehicles]);
+
+  const points = Object.values(tracks).flat();
+  const livePoints = vehicles
+    .map((vehicle) => {
+      const position = vehicle.position ?? vehicle.gps;
+      return typeof position?.lat === "number" && typeof position.lon === "number"
+        ? { id: vehicle.id, sysid: vehicle.sysid, lat: position.lat, lon: position.lon }
+        : null;
+    })
+    .filter((point): point is { id: string; sysid: number; lat: number; lon: number } => Boolean(point));
+  const allPoints = [...points, ...livePoints];
+  const bounds = allPoints.length
+    ? {
+        minLat: Math.min(...allPoints.map((point) => point.lat)),
+        maxLat: Math.max(...allPoints.map((point) => point.lat)),
+        minLon: Math.min(...allPoints.map((point) => point.lon)),
+        maxLon: Math.max(...allPoints.map((point) => point.lon))
+      }
+    : null;
+  const project = (point: { lat: number; lon: number }) => {
+    if (!bounds) {
+      return { x: 50, y: 50 };
+    }
+    const lonSpan = Math.max(bounds.maxLon - bounds.minLon, 0.0008);
+    const latSpan = Math.max(bounds.maxLat - bounds.minLat, 0.0008);
+    return {
+      x: 8 + ((point.lon - bounds.minLon) / lonSpan) * 84,
+      y: 92 - ((point.lat - bounds.minLat) / latSpan) * 84
+    };
+  };
+
+  return (
+    <section className="telemetry-map">
+      <div className="mavlink-command-title">
+        <strong>Flight Trace</strong>
+        <span>{livePoints.length ? `${livePoints.length} live` : "Waiting"}</span>
+      </div>
+      <svg viewBox="0 0 100 100" role="img" aria-label="Live vehicle map">
+        <path d="M10 20H90M10 40H90M10 60H90M10 80H90M20 10V90M40 10V90M60 10V90M80 10V90" />
+        {Object.entries(tracks).map(([id, track]) => {
+          const path = track
+            .map((point, index) => {
+              const projected = project(point);
+              return `${index === 0 ? "M" : "L"}${projected.x.toFixed(2)} ${projected.y.toFixed(2)}`;
+            })
+            .join(" ");
+          return path ? <path className="trace" d={path} key={id} /> : null;
+        })}
+        {livePoints.map((point) => {
+          const projected = project(point);
+          return (
+            <g className="vehicle-dot" key={point.id} transform={`translate(${projected.x} ${projected.y})`}>
+              <circle r="3.4" />
+              <text x="5" y="3">
+                {point.sysid}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </section>
+  );
+}
+
+function MissionPanel({
+  telemetry,
+  mission,
+  onUpload,
+  onDownload,
+  onSaveDownloaded
+}: {
+  telemetry: TelemetryStatus | null;
+  mission: MissionSyncStatus | null;
+  onUpload: (vehicle: TelemetryStatus["vehicles"][number]) => void;
+  onDownload: (vehicle: TelemetryStatus["vehicles"][number]) => void;
+  onSaveDownloaded: () => void;
+}) {
+  const vehicles = telemetry?.vehicles ?? [];
+  const [selectedVehicleId, setSelectedVehicleId] = useState("");
+  const selectedVehicle = vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? vehicles[0];
+
+  useEffect(() => {
+    if (!selectedVehicleId && vehicles[0]) {
+      setSelectedVehicleId(vehicles[0].id);
+    }
+  }, [selectedVehicleId, vehicles]);
+
+  return (
+    <div className="detail-content">
+      <div className="panel-title">
+        <span>Mission Sync</span>
+        <span className={`status-pill ${mission?.active ? "neutral" : "good"}`}>{mission?.active ? "Syncing" : "Ready"}</span>
+      </div>
+
+      <section className="mission-sync-panel">
+        <h2>Vehicle</h2>
+        {vehicles.length === 0 ? (
+          <div className="empty-state">Start telemetry and wait for a vehicle before mission sync.</div>
+        ) : (
+          <label className="field">
+            <span>Target</span>
+            <select value={selectedVehicle?.id ?? ""} onChange={(event) => setSelectedVehicleId(event.target.value)}>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  SYS {vehicle.sysid} / COMP {vehicle.compid}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <div className="action-grid">
+          <button type="button" disabled={!selectedVehicle || mission?.active} onClick={() => selectedVehicle && onUpload(selectedVehicle)}>
+            <Play size={16} />
+            <span>Upload</span>
+          </button>
+          <button type="button" disabled={!selectedVehicle || mission?.active} onClick={() => selectedVehicle && onDownload(selectedVehicle)}>
+            <Download size={16} />
+            <span>Download</span>
+          </button>
+        </div>
+
+        <div className="mission-status-card">
+          <strong>{mission?.message ?? "Mission sync idle"}</strong>
+          <span>
+            {mission?.direction ?? "idle"} / {mission?.expectedCount ?? 0} item target
+          </span>
+          <small>
+            Upload {mission?.uploadedCount ?? 0} / Download {mission?.downloadedCount ?? 0}
+          </small>
+        </div>
+
+        {mission?.missionText ? (
+          <button className="guide-action" type="button" onClick={onSaveDownloaded}>
+            <Save size={15} />
+            <span>Save Downloaded Mission</span>
+          </button>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function BomPanel({
+  rows,
+  onExportCsv,
+  onExportHtml
+}: {
+  rows: BomRow[];
+  onExportCsv: () => void;
+  onExportHtml: () => void;
+}) {
+  const totalMassG = rows.reduce((sum, row) => sum + row.massG, 0);
+  const totalCost = rows.reduce((sum, row) => sum + row.unitCostUsd, 0);
+
+  return (
+    <div className="detail-content">
+      <div className="panel-title">
+        <span>Bill of Materials</span>
+        <span className="status-pill neutral">{rows.length} items</span>
+      </div>
+      <div className="ai-metric-grid">
+        <div className="ai-metric-card">
+          <span>Total Mass</span>
+          <strong>
+            {formatMetric(totalMassG / 1000, 2, true)}
+            <small>kg</small>
+          </strong>
+        </div>
+        <div className="ai-metric-card">
+          <span>Total Cost</span>
+          <strong>
+            {formatMetric(totalCost, 2, true)}
+            <small>USD</small>
+          </strong>
+        </div>
+      </div>
+      <div className="artifact-grid">
+        <button type="button" onClick={onExportCsv}>
+          <Download size={16} />
+          <span>CSV</span>
+        </button>
+        <button type="button" onClick={onExportHtml}>
+          <FileJson size={16} />
+          <span>PDF Page</span>
+        </button>
+      </div>
+      <section className="bom-table">
+        {rows.length === 0 ? (
+          <div className="empty-state">Add components to build a bill of materials.</div>
+        ) : (
+          rows.map((row) => (
+            <article key={row.id}>
+              <div>
+                <strong>{row.label}</strong>
+                <span>{row.componentType}</span>
+              </div>
+              <p>
+                {row.manufacturer || "--"} {row.model || ""}
+              </p>
+              <small>
+                {row.massG.toFixed(1)} g / ${row.unitCostUsd.toFixed(2)}
+              </small>
+            </article>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ParamExplanationPanel({
+  explanations,
+  onRefresh,
+  onExport
+}: {
+  explanations: ParamExplanation[];
+  onRefresh: () => void;
+  onExport: () => void;
+}) {
+  return (
+    <div className="detail-content">
+      <div className="panel-title">
+        <span>Param Explanation</span>
+        <span className="panel-actions">
+          <button className="icon-button" type="button" title="Refresh explanations" onClick={onRefresh}>
+            <RefreshCw size={16} />
+          </button>
+          <button className="icon-button" type="button" title="Export params" onClick={onExport}>
+            <Download size={16} />
+          </button>
+        </span>
+      </div>
+      <section className="param-explain-list">
+        {explanations.length === 0 ? (
+          <div className="empty-state">Refresh to explain the generated parameter file.</div>
+        ) : (
+          explanations.map((entry) => (
+            <article key={entry.parameter}>
+              <div>
+                <strong>{entry.parameter}</strong>
+                <code>{entry.value}</code>
+              </div>
+              <span>{entry.source}</span>
+              <p>{entry.reason}</p>
+            </article>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ComparePanel({
+  current,
+  comparison,
+  onLoadClick
+}: {
+  current: { validationScore: number; estimate: PerformanceEstimate; name: string };
+  comparison: { validationScore: number; estimate: PerformanceEstimate; name: string } | null;
+  onLoadClick: () => void;
+}) {
+  const rows = [
+    {
+      label: "Validation",
+      current: current.validationScore,
+      comparison: comparison?.validationScore,
+      unit: "score"
+    },
+    {
+      label: "Mass",
+      current: current.estimate.totalMassG / 1000,
+      comparison: comparison ? comparison.estimate.totalMassG / 1000 : undefined,
+      unit: "kg"
+    },
+    {
+      label: "Endurance",
+      current: current.estimate.hoverEnduranceMin,
+      comparison: comparison?.estimate.hoverEnduranceMin,
+      unit: "min"
+    },
+    {
+      label: "Range",
+      current: current.estimate.rangeKm,
+      comparison: comparison?.estimate.rangeKm,
+      unit: "km"
+    }
+  ];
+
+  return (
+    <div className="detail-content">
+      <div className="panel-title">
+        <span>Design Compare</span>
+        <button className="icon-button" type="button" title="Load comparison workspace" onClick={onLoadClick}>
+          <FolderOpen size={16} />
+        </button>
+      </div>
+      <section className="compare-panel">
+        <div className="compare-header">
+          <strong>{current.name}</strong>
+          <span>{comparison?.name ?? "Load .saq"}</span>
+        </div>
+        {rows.map((row) => {
+          const delta = typeof row.comparison === "number" ? row.current - row.comparison : undefined;
+          return (
+            <div className="compare-row" key={row.label}>
+              <span>{row.label}</span>
+              <strong>
+                {formatMetric(row.current, row.label === "Validation" ? 0 : 2, true)} {row.unit}
+              </strong>
+              <strong>
+                {typeof row.comparison === "number" ? `${formatMetric(row.comparison, row.label === "Validation" ? 0 : 2, true)} ${row.unit}` : "--"}
+              </strong>
+              <small>{typeof delta === "number" ? `${delta >= 0 ? "+" : ""}${formatMetric(delta, 2, true)}` : "--"}</small>
+            </div>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const { fitView } = useReactFlow<DesignNode, DesignEdge>();
   const starterDesign = useMemo(() => createStarterDesign(), []);
@@ -1961,8 +2502,15 @@ function App() {
   const [gazeboStatus, setGazeboStatus] = useState<GazeboStatus | null>(null);
   const [gazeboCompileResult, setGazeboCompileResult] = useState<GazeboCompileResult | null>(null);
   const [gazeboCompiling, setGazeboCompiling] = useState(false);
+  const [setupDiagnostics, setSetupDiagnostics] = useState<SetupDiagnostics | null>(null);
+  const [setupChecking, setSetupChecking] = useState(false);
+  const [missionStatus, setMissionStatus] = useState<MissionSyncStatus | null>(null);
+  const [paramExplanations, setParamExplanations] = useState<ParamExplanation[]>([]);
+  const [scenarioRunResult, setScenarioRunResult] = useState<ScenarioRunResult | null>(null);
+  const [comparisonDesign, setComparisonDesign] = useState<UavDesign | null>(null);
   const workspaceFileInputRef = useRef<HTMLInputElement | null>(null);
   const missionFileInputRef = useRef<HTMLInputElement | null>(null);
+  const comparisonFileInputRef = useRef<HTMLInputElement | null>(null);
   const historyCurrentRef = useRef<WorkspaceHistoryEntry>(initialHistoryEntry);
   const historyApplyingRef = useRef(false);
   const undoStackRef = useRef<WorkspaceHistoryEntry[]>([]);
@@ -2051,6 +2599,25 @@ function App() {
           setTelemetryStatus(status);
           if (status.listener.active) {
             setTelemetryPort(status.listener.port);
+          }
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 2000);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => {
+      getMissionStatus()
+        .then((result) => {
+          if (mounted) {
+            setMissionStatus(result.mission);
           }
         })
         .catch(() => undefined);
@@ -2262,6 +2829,18 @@ function App() {
   const gcsTargets = useMemo(() => targetDefaults(settings), [settings]);
   const buildGuide = useMemo(() => buildGuideFor(nodes, settings), [nodes, settings]);
   const performanceEstimate = useMemo(() => analyzePerformance(nodes, settings, selectedNode), [nodes, selectedNode, settings]);
+  const wireSuggestions = useMemo(() => autoWireSuggestions(nodes, edges), [edges, nodes]);
+  const bomRows = useMemo(() => bomRowsFor(nodes), [nodes]);
+  const comparisonSummary = useMemo(() => {
+    if (!comparisonDesign) {
+      return null;
+    }
+    return {
+      name: comparisonDesign.name,
+      validationScore: validateDesign(comparisonDesign.nodes, comparisonDesign.edges, comparisonDesign.settings).score,
+      estimate: analyzePerformance(comparisonDesign.nodes, comparisonDesign.settings)
+    };
+  }, [comparisonDesign]);
 
   const filteredCatalog = useMemo(() => {
     const query = catalogQuery.trim().toLowerCase();
@@ -2288,6 +2867,19 @@ function App() {
         String(component.summary ?? "").toLowerCase().includes(query)
     );
   }, [catalogQuery, customComponents]);
+
+  const filteredProductTemplates = useMemo(() => {
+    const query = catalogQuery.trim().toLowerCase();
+    if (!query) {
+      return productTemplates;
+    }
+    return productTemplates.filter(
+      (component) =>
+        component.name.toLowerCase().includes(query) ||
+        component.baseType.toLowerCase().includes(query) ||
+        String(component.summary ?? "").toLowerCase().includes(query)
+    );
+  }, [catalogQuery]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<DesignNode>[]) => {
@@ -2555,6 +3147,30 @@ function App() {
     addComponent(buildGuide.next.definition);
   };
 
+  const applyAutoWireSuggestions = (suggestions = wireSuggestions) => {
+    if (suggestions.length === 0) {
+      setStatusMessage("No safe auto-wire suggestions available");
+      return;
+    }
+
+    const nextEdges = suggestions.map((suggestion): DesignEdge => ({
+      id: `edge-${crypto.randomUUID()}`,
+      source: suggestion.sourceId,
+      sourceHandle: suggestion.sourceHandle,
+      target: suggestion.targetId,
+      targetHandle: suggestion.targetHandle,
+      type: "smoothstep",
+      markerEnd: { type: MarkerType.ArrowClosed },
+      data: { signal: suggestion.signal }
+    }));
+
+    setEdges((currentEdges) => [...currentEdges.map((edge): DesignEdge => ({ ...edge, selected: false })), ...nextEdges]);
+    setSelectedEdgeId(nextEdges.at(-1)?.id ?? null);
+    setSelectedNodeId(null);
+    setTab("validation");
+    setStatusMessage(`${nextEdges.length} connection${nextEdges.length === 1 ? "" : "s"} added by Auto-Wire`);
+  };
+
   const updateSelectedProperty = (key: string, value: string | number | boolean) => {
     if (!selectedNode) {
       return;
@@ -2693,6 +3309,97 @@ function App() {
   };
 
   const currentDesign = () => designFromState(designName, nodes, edges, settings, designId);
+
+  const refreshSetupDiagnostics = async () => {
+    setSetupChecking(true);
+    setStatusMessage("Checking local setup...");
+    try {
+      const diagnostics = await getSetupDiagnostics();
+      setSetupDiagnostics(diagnostics);
+      setStatusMessage(diagnostics.ready ? "Setup diagnostics ready" : "Setup diagnostics found missing optional or required tools");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Setup diagnostics failed");
+    } finally {
+      setSetupChecking(false);
+    }
+  };
+
+  const refreshParamExplanations = async () => {
+    try {
+      const result = await explainParamFile(currentDesign());
+      setParamExplanations(result.explanations);
+      setStatusMessage("Parameter explanation refreshed");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not explain parameter file");
+    }
+  };
+
+  const handleBomCsvDownload = async () => {
+    await handleArtifactDownload(buildBomCsvFile, "Bill of materials CSV exported");
+  };
+
+  const handleBomHtmlDownload = async () => {
+    await handleArtifactDownload(buildBomHtmlFile, "Printable BOM report exported");
+  };
+
+  const handleRunScenario = () => {
+    const result = scenarioRunFor(nodes, edges, settings, performanceEstimate);
+    setScenarioRunResult(result);
+    setStatusMessage(result.passed ? `${scenarioLabel(settings.testScenario)} scenario checks passed` : `${scenarioLabel(settings.testScenario)} scenario needs attention`);
+  };
+
+  const handleMissionUpload = async (vehicle: TelemetryStatus["vehicles"][number]) => {
+    try {
+      const mission = await buildMissionFile(currentDesign());
+      const result = await uploadMission(vehicle.sysid, vehicle.compid, mission.content);
+      setMissionStatus(result.mission);
+      setStatusMessage(result.mission.message);
+      refreshLogs();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Mission upload failed");
+    }
+  };
+
+  const handleMissionDownload = async (vehicle: TelemetryStatus["vehicles"][number]) => {
+    try {
+      const result = await downloadMission(vehicle.sysid, vehicle.compid);
+      setMissionStatus(result.mission);
+      setStatusMessage(result.mission.message);
+      refreshLogs();
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Mission download failed");
+    }
+  };
+
+  const handleSaveDownloadedMission = () => {
+    if (!missionStatus?.missionText) {
+      setStatusMessage("No downloaded mission is available yet");
+      return;
+    }
+    downloadText(`${safeFileName(designName)}-downloaded.waypoints`, missionStatus.missionText, "text/plain");
+    setStatusMessage("Downloaded mission saved");
+  };
+
+  const handleComparisonLoadClick = () => {
+    comparisonFileInputRef.current?.click();
+  };
+
+  const handleComparisonFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(await file.text());
+      const loadedDesign = normalizeDesignPayload(payload, file.name.replace(/\.saq$/i, ""));
+      setComparisonDesign(loadedDesign);
+      setStatusMessage(`${file.name} loaded for comparison`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not load comparison workspace");
+    }
+  };
 
   const applyWorkspaceDesign = (design: UavDesign, message: string) => {
     const normalized = normalizeDesignPayload(design, design.name);
@@ -3300,6 +4007,26 @@ function App() {
             )}
           </section>
 
+          <section className="custom-library product-library">
+            <div className="build-guide-header">
+              <span>Product Presets</span>
+              <strong>{filteredProductTemplates.length}</strong>
+            </div>
+            <div className="custom-library-list">
+              {filteredProductTemplates.slice(0, 8).map((component) => (
+                <div className="custom-library-item" key={component.id ?? component.name}>
+                  <button type="button" onClick={() => addCustomComponent(component)}>
+                    <Plus size={15} />
+                    <span>
+                      <strong>{component.name}</strong>
+                      <small>{customComponentSummary(component)}</small>
+                    </span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <div className="catalog-list">
             {Object.entries(groupedCatalog).map(([category, components]) => (
               <section key={category} className="catalog-group">
@@ -3509,6 +4236,10 @@ function App() {
               <Play size={16} />
               <span>SITL</span>
             </button>
+            <button className={tab === "mission" ? "active" : ""} type="button" onClick={() => setTab("mission")}>
+              <MapPin size={16} />
+              <span>Mission</span>
+            </button>
             <button className={tab === "telemetry" ? "active" : ""} type="button" onClick={() => setTab("telemetry")}>
               <Radio size={16} />
               <span>Live</span>
@@ -3524,6 +4255,18 @@ function App() {
             <button className={tab === "performance" ? "active" : ""} type="button" onClick={() => setTab("performance")}>
               <Sparkles size={16} />
               <span>AI</span>
+            </button>
+            <button className={tab === "bom" ? "active" : ""} type="button" onClick={() => setTab("bom")}>
+              <FileJson size={16} />
+              <span>BOM</span>
+            </button>
+            <button className={tab === "params" ? "active" : ""} type="button" onClick={() => setTab("params")}>
+              <ScrollText size={16} />
+              <span>Params</span>
+            </button>
+            <button className={tab === "compare" ? "active" : ""} type="button" onClick={() => setTab("compare")}>
+              <GitBranch size={16} />
+              <span>Compare</span>
             </button>
           </div>
 
@@ -3692,6 +4435,28 @@ function App() {
                   {validation.counts.error ? "Blocked" : "Ready"}
                 </span>
               </div>
+              <section className="auto-wire-panel">
+                <div className="mavlink-command-title">
+                  <strong>Auto-Wire Assistant</strong>
+                  <span>{wireSuggestions.length} suggestions</span>
+                </div>
+                <button className="guide-action" type="button" onClick={() => applyAutoWireSuggestions()} disabled={wireSuggestions.length === 0}>
+                  <Link2 size={15} />
+                  <span>Apply Safe Wires</span>
+                </button>
+                {wireSuggestions.length > 0 ? (
+                  <div className="wire-suggestion-list">
+                    {wireSuggestions.slice(0, 8).map((suggestion) => (
+                      <button type="button" key={suggestion.id} onClick={() => applyAutoWireSuggestions([suggestion])}>
+                        <span className={`legend-swatch ${suggestion.signal}`} />
+                        <span>{suggestion.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="scenario-note">All recognized safe connections are already present.</p>
+                )}
+              </section>
               <div className="issue-list">
                 {validation.issues.length === 0 ? (
                   <div className="empty-state">No issues</div>
@@ -3774,6 +4539,31 @@ function App() {
                   </button>
                 </div>
                 <p>{systemStatus?.sitl.path ?? systemStatus?.sitl.notes[0] ?? "Enter a path or use ARDUPILOT_HOME/PATH detection."}</p>
+              </section>
+
+              <section className="setup-diagnostics">
+                <div className="mavlink-command-title">
+                  <strong>SITL Setup Wizard</strong>
+                  <span>{setupDiagnostics?.ready ? "Ready" : "Check"}</span>
+                </div>
+                <button className="guide-action" type="button" onClick={() => void refreshSetupDiagnostics()} disabled={setupChecking}>
+                  <RefreshCw size={15} />
+                  <span>{setupChecking ? "Checking" : "Run Diagnostics"}</span>
+                </button>
+                {setupDiagnostics ? (
+                  <div className="setup-check-list">
+                    {setupDiagnostics.checks.map((check) => (
+                      <article className={check.ok ? "ok" : "bad"} key={check.id}>
+                        <div>
+                          <strong>{check.label}</strong>
+                          <span>{check.ok ? "OK" : "Missing"}</span>
+                        </div>
+                        <p>{check.detail}</p>
+                        {check.fix ? <small>{check.fix}</small> : null}
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
               </section>
 
               <label className="field">
@@ -3964,6 +4754,23 @@ function App() {
                 </div>
 
                 <p className="scenario-note">{scenarioHint(settings)}</p>
+                <button className="guide-action" type="button" onClick={handleRunScenario}>
+                  <CheckCircle2 size={15} />
+                  <span>Run Scenario Checks</span>
+                </button>
+                {scenarioRunResult ? (
+                  <div className={`scenario-run-card ${scenarioRunResult.passed ? "ok" : "bad"}`}>
+                    <strong>
+                      {scenarioLabel(scenarioRunResult.scenario)} {scenarioRunResult.passed ? "passed" : "needs attention"}
+                    </strong>
+                    {scenarioRunResult.checks.map((check) => (
+                      <p key={check.label}>
+                        <span>{check.passed ? "PASS" : "CHECK"}</span>
+                        {check.label}: {check.detail}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
               </section>
 
               <section className="artifact-panel">
@@ -4082,6 +4889,16 @@ function App() {
             </div>
           )}
 
+          {tab === "mission" && (
+            <MissionPanel
+              telemetry={telemetryStatus}
+              mission={missionStatus}
+              onUpload={(vehicle) => void handleMissionUpload(vehicle)}
+              onDownload={(vehicle) => void handleMissionDownload(vehicle)}
+              onSaveDownloaded={handleSaveDownloadedMission}
+            />
+          )}
+
           {tab === "telemetry" && (
             <TelemetryPanel
               status={telemetryStatus}
@@ -4106,8 +4923,36 @@ function App() {
           )}
 
           {tab === "performance" && <PerformancePanel estimate={performanceEstimate} />}
+
+          {tab === "bom" && (
+            <BomPanel rows={bomRows} onExportCsv={() => void handleBomCsvDownload()} onExportHtml={() => void handleBomHtmlDownload()} />
+          )}
+
+          {tab === "params" && (
+            <ParamExplanationPanel
+              explanations={paramExplanations}
+              onRefresh={() => void refreshParamExplanations()}
+              onExport={() => void handleParamsDownload()}
+            />
+          )}
+
+          {tab === "compare" && (
+            <ComparePanel
+              current={{ name: designName, validationScore: validation.score, estimate: performanceEstimate }}
+              comparison={comparisonSummary}
+              onLoadClick={handleComparisonLoadClick}
+            />
+          )}
         </aside>
       </main>
+
+      <input
+        ref={comparisonFileInputRef}
+        className="workspace-file-input"
+        type="file"
+        accept=".saq,application/json"
+        onChange={handleComparisonFileSelected}
+      />
 
       <footer className="statusbar">
         <span>{statusMessage}</span>

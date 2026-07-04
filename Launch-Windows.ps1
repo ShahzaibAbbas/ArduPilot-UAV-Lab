@@ -103,6 +103,41 @@ function Install-ProjectDependencies {
   }
 }
 
+function Stop-ExistingAppServers {
+  $ports = @(4310, 5173)
+  $stopped = @()
+
+  Write-Step "Closing existing ArduPilot UAV Lab servers"
+
+  foreach ($port in $ports) {
+    $listeners = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
+    foreach ($listener in $listeners) {
+      $processId = [int]$listener.OwningProcess
+      if ($processId -le 0 -or $processId -eq $PID) {
+        continue
+      }
+
+      try {
+        $process = Get-Process -Id $processId -ErrorAction Stop
+        Stop-Process -Id $processId -Force -ErrorAction Stop
+        $stopped += "port $port / PID $processId / $($process.ProcessName)"
+      } catch {
+        Write-Warning "Could not stop process on port $port (PID $processId): $($_.Exception.Message)"
+      }
+    }
+  }
+
+  if ($stopped.Count -eq 0) {
+    Write-Host "No existing app server ports were in use."
+    return
+  }
+
+  foreach ($entry in $stopped) {
+    Write-Host "Stopped $entry"
+  }
+  Start-Sleep -Seconds 1
+}
+
 Push-Location $ProjectRoot
 try {
   Write-Step "Checking Windows launcher requirements"
@@ -116,6 +151,7 @@ try {
   }
 
   Write-Step "Starting ArduPilot UAV Lab"
+  Stop-ExistingAppServers
   if ($SkipBrowser) {
     Write-Host "Open http://127.0.0.1:5173 after the server starts."
   } else {

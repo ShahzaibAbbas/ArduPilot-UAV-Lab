@@ -92,6 +92,35 @@ install_project_dependencies() {
   fi
 }
 
+stop_existing_app_servers() {
+  local stopped=0
+  step "Closing existing ArduPilot UAV Lab servers"
+
+  for port in 4310 5173; do
+    local pids=""
+    if command_exists lsof; then
+      pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    elif command_exists fuser; then
+      pids="$(fuser "${port}/tcp" 2>/dev/null || true)"
+    fi
+
+    for pid in $pids; do
+      if [[ "$pid" == "$$" ]]; then
+        continue
+      fi
+      echo "Stopping process ${pid} on port ${port}"
+      kill "$pid" >/dev/null 2>&1 || true
+      stopped=1
+    done
+  done
+
+  if [[ "$stopped" == "1" ]]; then
+    sleep 1
+  else
+    echo "No existing app server ports were in use."
+  fi
+}
+
 open_browser_later() {
   if [[ "${SKIP_BROWSER:-0}" == "1" ]]; then
     return
@@ -112,6 +141,7 @@ if [[ "${CHECK_ONLY:-0}" == "1" ]]; then
 fi
 
 step "Starting ArduPilot UAV Lab"
+stop_existing_app_servers
 echo "Open http://127.0.0.1:5173 if the browser does not open automatically."
 open_browser_later
 export ARDUPILOT_LAUNCHER_PID="$$"

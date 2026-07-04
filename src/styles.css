@@ -1358,8 +1358,10 @@ button:disabled {
 .gcs-targets h2,
 .artifact-panel h2,
 .gazebo-helper h2,
+.setup-diagnostics h2,
 .mission-test h2,
 .swarm-layout h2,
+.mission-sync-panel h2,
 .telemetry-listener h2,
 .telemetry-vehicles h2,
 .sitl-locator h2 {
@@ -2729,6 +2731,206 @@ button:disabled {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.auto-wire-panel,
+.setup-diagnostics,
+.mission-sync-panel,
+.bom-table,
+.param-explain-list,
+.compare-panel,
+.telemetry-map {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+}
+
+.wire-suggestion-list,
+.setup-check-list {
+  display: grid;
+  gap: 7px;
+}
+
+.wire-suggestion-list button {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.wire-suggestion-list button span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup-check-list article,
+.scenario-run-card,
+.mission-status-card,
+.bom-table article,
+.param-explain-list article {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.setup-check-list article.ok,
+.scenario-run-card.ok {
+  border-color: rgba(37, 138, 71, 0.28);
+  background: #f2faf4;
+}
+
+.setup-check-list article.bad,
+.scenario-run-card.bad {
+  border-color: rgba(200, 63, 63, 0.28);
+  background: #fff7f7;
+}
+
+.setup-check-list article div,
+.param-explain-list article div,
+.bom-table article div,
+.compare-header,
+.compare-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.setup-check-list article span,
+.mission-status-card span,
+.bom-table article span,
+.param-explain-list article span,
+.compare-header span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.setup-check-list article p,
+.setup-check-list article small,
+.scenario-run-card p,
+.mission-status-card small,
+.bom-table article p,
+.bom-table article small,
+.param-explain-list article p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.scenario-run-card {
+  margin-top: 10px;
+}
+
+.scenario-run-card p span {
+  display: inline-block;
+  min-width: 42px;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.telemetry-map svg {
+  width: 100%;
+  height: 172px;
+  border: 1px solid #d8e0df;
+  border-radius: 8px;
+  background: #eef6f5;
+}
+
+.telemetry-map svg > path {
+  fill: none;
+  stroke: rgba(101, 116, 126, 0.22);
+  stroke-width: 0.45;
+}
+
+.telemetry-map .trace {
+  stroke: var(--teal);
+  stroke-width: 1.4;
+}
+
+.telemetry-map .vehicle-dot circle {
+  fill: var(--blue);
+  stroke: #ffffff;
+  stroke-width: 1.3;
+}
+
+.telemetry-map .vehicle-dot text {
+  fill: var(--text);
+  font-size: 7px;
+  font-weight: 900;
+}
+
+.mission-status-card strong,
+.bom-table article strong,
+.param-explain-list article strong,
+.compare-header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.param-explain-list article code {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #eef2f7;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.compare-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.compare-header {
+  padding: 12px;
+  background: #f3fbfa;
+}
+
+.compare-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 78px 78px 58px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.compare-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-row strong,
+.compare-row small {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.product-library {
+  max-height: 260px;
+  overflow: auto;
 }
 
 @media (max-width: 1180px) {

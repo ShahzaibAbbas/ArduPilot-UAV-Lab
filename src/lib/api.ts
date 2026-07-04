@@ -32,6 +32,18 @@ export interface SoftwareUpdateResult {
   steps: Array<{ command: string; output: string }>;
 }
 
+export interface SetupDiagnostics {
+  platform: string;
+  ready: boolean;
+  checks: Array<{
+    id: string;
+    label: string;
+    ok: boolean;
+    detail?: string;
+    fix?: string;
+  }>;
+}
+
 export interface CustomComponentTemplate {
   id?: string;
   name: string;
@@ -46,6 +58,13 @@ export interface ArtifactResult {
   fileName: string;
   content: string;
   mimeType: string;
+}
+
+export interface ParamExplanation {
+  parameter: string;
+  value: string;
+  source: string;
+  reason: string;
 }
 
 export interface BinaryArtifactResult {
@@ -200,6 +219,21 @@ export interface TelemetryStatus {
   }>;
 }
 
+export interface MissionSyncStatus {
+  active: boolean;
+  direction?: "upload" | "download";
+  message: string;
+  updatedAt?: string;
+  target?: {
+    sysid: number;
+    compid: number;
+  };
+  uploadedCount: number;
+  downloadedCount: number;
+  expectedCount: number;
+  missionText?: string;
+}
+
 export interface AppLogEntry {
   id: string;
   ts: string;
@@ -235,6 +269,10 @@ function fileNameFromDisposition(value: string | null, fallback: string) {
 
 export async function getSystemStatus() {
   return parseResponse<SystemStatus>(await fetch("/api/system"));
+}
+
+export async function getSetupDiagnostics() {
+  return parseResponse<SetupDiagnostics>(await fetch("/api/setup/diagnostics"));
 }
 
 export async function locateSimVehicle(simVehiclePath: string) {
@@ -313,6 +351,26 @@ export async function buildPrearmFile(design: UavDesign) {
   );
 }
 
+export async function buildBomCsvFile(design: UavDesign) {
+  return parseResponse<ArtifactResult>(
+    await fetch("/api/export/bom/csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(design)
+    })
+  );
+}
+
+export async function buildBomHtmlFile(design: UavDesign) {
+  return parseResponse<ArtifactResult>(
+    await fetch("/api/export/bom/html", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(design)
+    })
+  );
+}
+
 export async function buildJsonBridgeFile(design: UavDesign) {
   return parseResponse<ArtifactResult>(
     await fetch("/api/export/json-bridge", {
@@ -358,6 +416,16 @@ export async function buildSitlPlan(design: UavDesign) {
   );
 }
 
+export async function explainParamFile(design: UavDesign) {
+  return parseResponse<{ explanations: ParamExplanation[] }>(
+    await fetch("/api/export/params/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(design)
+    })
+  );
+}
+
 export async function launchSitl(design: UavDesign) {
   return parseResponse<{ pid: number; plan: SitlPlan }>(
     await fetch("/api/sitl/launch", {
@@ -396,6 +464,30 @@ export async function sendMavlinkCommand(command: MavlinkCommandRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(command)
+    })
+  );
+}
+
+export async function getMissionStatus() {
+  return parseResponse<{ mission: MissionSyncStatus }>(await fetch("/api/mission/status"));
+}
+
+export async function uploadMission(sysid: number, compid: number | undefined, missionText: string) {
+  return parseResponse<{ mission: MissionSyncStatus }>(
+    await fetch("/api/mission/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sysid, compid, missionText })
+    })
+  );
+}
+
+export async function downloadMission(sysid: number, compid?: number) {
+  return parseResponse<{ mission: MissionSyncStatus }>(
+    await fetch("/api/mission/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sysid, compid })
     })
   );
 }
