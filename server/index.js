@@ -19,6 +19,7 @@ import { deleteCustomComponent, listCustomComponents, saveCustomComponent } from
 import { listDesigns, saveDesign } from "./designStore.js";
 import { compileGazeboPlugins, gazeboStatus } from "./gazebo.js";
 import { clearLogs, listLogs, loggerError, loggerInfo, loggerWarn, readLogFileTail } from "./logger.js";
+import { isAllowedLocalOrigin } from "./localOrigin.js";
 import { setupDiagnostics } from "./setup.js";
 import { buildSitlPlan, generateParamContent, generateParamExplanation, getSystemStatus } from "./sitl.js";
 import { runTerminalCommand } from "./terminal.js";
@@ -43,7 +44,6 @@ const launcherPid = Number(process.env.ARDUPILOT_LAUNCHER_PID || 0);
 let softwareUpdateRunning = false;
 let shuttingDown = false;
 let httpServer;
-const localHostnames = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const designSchema = z.object({
   id: z.string().optional(),
@@ -114,19 +114,6 @@ async function runMaintenanceStep(command, args) {
   };
   loggerInfo("maintenance", `Finished ${result.command}`, { outputLength: result.output.length });
   return result;
-}
-
-function isAllowedLocalOrigin(origin) {
-  if (!origin) {
-    return true;
-  }
-
-  try {
-    const parsed = new URL(origin);
-    return ["http:", "https:"].includes(parsed.protocol) && localHostnames.has(parsed.hostname);
-  } catch {
-    return false;
-  }
 }
 
 function requireLocalOrigin(request, response, next) {

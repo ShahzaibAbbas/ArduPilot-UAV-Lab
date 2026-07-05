@@ -12,6 +12,7 @@
     "own:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
     "design:browser": "node scripts/launch-design-browser.mjs",
     "design:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
+    "test": "node --test server/localOrigin.test.js",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
