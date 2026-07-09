@@ -1,4 +1,5 @@
 import type { ComponentDefinition, ComponentPort, ComponentPropertyDefinition, DesignNode } from "./design";
+import { airframeValues } from "./airframes";
 
 const powerIn: ComponentPort = { id: "power-in", label: "PWR", kind: "power", direction: "input", required: true };
 const powerOut: ComponentPort = { id: "power-out", label: "PWR", kind: "power", direction: "output" };
@@ -24,7 +25,7 @@ export const componentCatalog: ComponentDefinition[] = [
     icon: "Frame",
     ports: [mountOut],
     properties: [
-      { key: "layout", label: "Layout", type: "select", defaultValue: "quad-x", options: ["quad-x", "hexa-x", "octa-x", "plane", "rover"] },
+      { key: "layout", label: "Layout", type: "select", defaultValue: "quad-x", options: airframeValues },
       { key: "wheelbaseMm", label: "Wheelbase", type: "number", defaultValue: 450, min: 120, max: 3000, unit: "mm" },
       { key: "massKg", label: "Dry mass", type: "number", defaultValue: 1.35, min: 0.1, max: 100, unit: "kg" }
     ]

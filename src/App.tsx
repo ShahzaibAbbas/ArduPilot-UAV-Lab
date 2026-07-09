@@ -75,7 +75,8 @@ import {
 } from "./domain/componentCatalog";
 import { createStarterDesign } from "./domain/starterDesign";
 import { productTemplates } from "./domain/productTemplates";
-import { expectedMotorCount, validateDesign } from "./domain/validators";
+import { componentCompatibilityMessage, expectedMotorCount, validateDesign } from "./domain/validators";
+import { airframeLabel, airframeOptions, normalizeAirframeValue, rotorCountForFrame } from "./domain/airframes";
 import {
   buildBomCsvFile,
   buildBomHtmlFile,
@@ -445,7 +446,65 @@ function createHistoryEntry(snapshot: WorkspaceSnapshot): WorkspaceHistoryEntry 
   };
 }
 
-function ObjectShape({ componentType, icon: Icon }: { componentType: string; icon: LucideIcon }) {
+function FrameLayoutIcon({ frame, size = 24 }: { frame?: string; size?: number }) {
+  const normalizedFrame = normalizeAirframeValue(frame);
+
+  if (normalizedFrame === "fixed-wing") {
+    return (
+      <svg className="frame-layout-icon frame-layout-icon-plane" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <path d="M16 4 L19 14 L29 17 L20 20 L18 28 L16 24 L14 28 L12 20 L3 17 L13 14 Z" />
+      </svg>
+    );
+  }
+
+  if (normalizedFrame === "rover") {
+    return (
+      <svg className="frame-layout-icon frame-layout-icon-rover" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect x="7" y="12" width="18" height="9" rx="3" />
+        <circle cx="10" cy="24" r="3" />
+        <circle cx="22" cy="24" r="3" />
+        <path d="M12 12 L16 8 L21 12" />
+      </svg>
+    );
+  }
+
+  const rotorCount = rotorCountForFrame(normalizedFrame);
+  const rotorRadius = rotorCount > 16 ? 1.2 : rotorCount > 8 ? 1.55 : 2.25;
+  const showArms = rotorCount <= 12;
+  const points = Array.from({ length: Math.max(1, rotorCount) }, (_, index) => {
+    const angle = -Math.PI / 2 + (index / Math.max(1, rotorCount)) * Math.PI * 2;
+    const radius = rotorCount === 1 ? 0 : 11.5;
+    return {
+      x: 16 + Math.cos(angle) * radius,
+      y: 16 + Math.sin(angle) * radius
+    };
+  });
+
+  return (
+    <svg className="frame-layout-icon frame-layout-icon-rotor" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+      {showArms
+        ? points.map((point, index) => <line className="frame-arm" key={`arm-${index}`} x1="16" y1="16" x2={point.x} y2={point.y} />)
+        : null}
+      {points.map((point, index) => (
+        <circle className="frame-rotor" key={`rotor-${index}`} cx={point.x} cy={point.y} r={rotorRadius} />
+      ))}
+      <circle className="frame-body" cx="16" cy="16" r="5" />
+      <text className="frame-count" x="16" y="18.8">
+        {rotorCount}
+      </text>
+    </svg>
+  );
+}
+
+function ObjectShape({ componentType, icon: Icon, frameLayout }: { componentType: string; icon: LucideIcon; frameLayout?: string }) {
+  if (componentType === "frame") {
+    return (
+      <div className="object-shape object-shape-frame" aria-hidden="true">
+        <FrameLayoutIcon frame={frameLayout} size={38} />
+      </div>
+    );
+  }
+
   return (
     <div className={`object-shape object-shape-${componentType}`} aria-hidden="true">
       <span className="shape-arm shape-arm-a" />
@@ -460,6 +519,7 @@ function ObjectShape({ componentType, icon: Icon }: { componentType: string; ico
 function ComponentNode({ data, selected }: NodeProps<DesignNode>) {
   const definition = getComponentDefinition(data.componentType);
   const Icon = iconMap[definition.icon as keyof typeof iconMap] ?? Boxes;
+  const frameLayout = data.componentType === "frame" ? String(data.properties.layout ?? "quad-x") : undefined;
   const inputPorts = definition.ports.filter((port) => port.direction === "input");
   const outputPorts = definition.ports.filter((port) => port.direction === "output");
   const editObject = typeof data.onEdit === "function" ? (data.onEdit as () => void) : undefined;
@@ -470,7 +530,7 @@ function ComponentNode({ data, selected }: NodeProps<DesignNode>) {
     <div className={`component-node node-shape-${data.componentType} ${selected ? "selected" : ""} ${data.health ?? "ok"}`} style={{ minHeight }}>
       <div className="node-header">
         <span className="node-icon">
-          <Icon size={16} />
+          {frameLayout ? <FrameLayoutIcon frame={frameLayout} size={17} /> : <Icon size={16} />}
         </span>
         <span className="node-title">{data.label}</span>
         {editObject ? (
@@ -490,7 +550,7 @@ function ComponentNode({ data, selected }: NodeProps<DesignNode>) {
       </div>
       <div className="node-meta">{definition.category}</div>
       <div className="node-object-shape">
-        <ObjectShape componentType={data.componentType} icon={Icon} />
+        <ObjectShape componentType={data.componentType} icon={Icon} frameLayout={frameLayout} />
       </div>
 
       {inputPorts.map((port, index) => (
@@ -729,6 +789,16 @@ function checkPortConnection(connection: Connection | DesignEdge, nodes: DesignN
     return { valid: false, message: `${sourcePort.kind.toUpperCase()} cannot connect to ${targetPort.kind.toUpperCase()}.` };
   }
 
+  const componentMessage = componentCompatibilityMessage(
+    source.data.componentType,
+    target.data.componentType,
+    connection.sourceHandle,
+    connection.targetHandle
+  );
+  if (componentMessage) {
+    return { valid: false, message: componentMessage };
+  }
+
   return { valid: true, message: "Connection valid" };
 }
 
@@ -767,6 +837,7 @@ function settingsWithDefaults(settings?: Partial<SimulationSettings>): Simulatio
   const merged = { ...defaultSettings, ...(settings ?? {}) } as SimulationSettings;
   return {
     ...merged,
+    frame: normalizeAirframeValue(merged.frame),
     gcsTargets: targetDefaults(merged).map((target) => ({ ...target }))
   };
 }
@@ -783,6 +854,13 @@ function normalizeNode(rawNode: unknown): DesignNode | null {
 
   try {
     const definition = getComponentDefinition(componentType);
+    const properties = {
+      ...defaultPropertiesForComponent(componentType),
+      ...(data?.properties && typeof data.properties === "object" ? data.properties : {})
+    };
+    if (componentType === "frame" && typeof properties.layout === "string") {
+      properties.layout = normalizeAirframeValue(properties.layout);
+    }
     return {
       ...node,
       id: typeof node.id === "string" && node.id ? node.id : `${componentType}-${crypto.randomUUID()}`,
@@ -795,10 +873,7 @@ function normalizeNode(rawNode: unknown): DesignNode | null {
       data: {
         componentType,
         label: typeof data?.label === "string" && data.label ? data.label : definition.name,
-        properties: {
-          ...defaultPropertiesForComponent(componentType),
-          ...(data?.properties && typeof data.properties === "object" ? data.properties : {})
-        }
+        properties
       }
     } as DesignNode;
   } catch {
@@ -916,6 +991,80 @@ function buildGuideFor(nodes: DesignNode[], settings: SimulationSettings) {
   };
 }
 
+function componentLimitFor(componentType: string, settings: SimulationSettings) {
+  if (componentType === "esc" || componentType === "motor") {
+    return expectedMotorCount(settings);
+  }
+  if (componentType === "frame") {
+    return 1;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+interface ComponentLimitStatus {
+  allowed: boolean;
+  limit: number;
+  message?: string;
+}
+
+function componentLimitStatus(componentType: string, nodes: DesignNode[], settings: SimulationSettings): ComponentLimitStatus {
+  const limit = componentLimitFor(componentType, settings);
+  if (!Number.isFinite(limit)) {
+    return { allowed: true, limit };
+  }
+
+  const count = nodesByType(nodes, componentType).length;
+  if (count < limit) {
+    return { allowed: true, limit };
+  }
+
+  const definition = getComponentDefinition(componentType);
+  const frameName = airframeLabel(settings.frame);
+  const noun = componentType === "esc" ? "ESC" : definition.name.toLowerCase();
+  const plural = componentType === "esc" ? (limit === 1 ? "ESC" : "ESCs") : limit === 1 ? noun : `${noun}s`;
+  return {
+    allowed: false,
+    limit,
+    message:
+      componentType === "frame"
+        ? "Only one airframe can define the vehicle layout."
+        : `${frameName} allows no more than ${limit} ${plural}.`
+  };
+}
+
+function trimPropulsionForAirframe(nodes: DesignNode[], settings: SimulationSettings) {
+  const maxPropulsionObjects = Math.max(expectedMotorCount(settings), 0);
+  const counts = { esc: 0, motor: 0 };
+  const removedIds: string[] = [];
+  const nextNodes = nodes.filter((node) => {
+    if (node.data.componentType !== "esc" && node.data.componentType !== "motor") {
+      return true;
+    }
+
+    const type = node.data.componentType;
+    counts[type] += 1;
+    if (counts[type] <= maxPropulsionObjects) {
+      return true;
+    }
+
+    removedIds.push(node.id);
+    return false;
+  });
+
+  return { nodes: nextNodes, removedIds };
+}
+
+function propulsionTrimMessage(removedNodes: DesignNode[], frame: string) {
+  const motors = removedNodes.filter((node) => node.data.componentType === "motor").length;
+  const escs = removedNodes.filter((node) => node.data.componentType === "esc").length;
+  const parts = [
+    motors > 0 ? `${motors} motor${motors === 1 ? "" : "s"}` : "",
+    escs > 0 ? `${escs} ESC${escs === 1 ? "" : "s"}` : ""
+  ].filter(Boolean);
+
+  return parts.length > 0 ? `${airframeLabel(frame)} selected; removed extra ${parts.join(" and ")}.` : `${airframeLabel(frame)} selected`;
+}
+
 interface AutoWireSuggestion {
   id: string;
   title: string;
@@ -926,7 +1075,7 @@ interface AutoWireSuggestion {
   signal: SignalKind;
 }
 
-function autoWireSuggestions(nodes: DesignNode[], edges: DesignEdge[]): AutoWireSuggestion[] {
+function autoWireSuggestions(nodes: DesignNode[], edges: DesignEdge[], settings: SimulationSettings): AutoWireSuggestion[] {
   const suggestions: AutoWireSuggestion[] = [];
   const first = (type: string) => firstNodeByType(nodes, type);
   const byType = (type: string) => nodesByType(nodes, type);
@@ -972,6 +1121,7 @@ function autoWireSuggestions(nodes: DesignNode[], edges: DesignEdge[]): AutoWire
   const powerModule = first("power-module");
   const escs = byType("esc");
   const motors = byType("motor");
+  const propulsionSlots = expectedMotorCount(settings);
 
   add("Battery feeds power module", battery, "power-out", powerModule, "power-in");
   add("Power module feeds flight controller", powerModule, "power-out", flightController, "power-in");
@@ -992,13 +1142,13 @@ function autoWireSuggestions(nodes: DesignNode[], edges: DesignEdge[]): AutoWire
   add("Optical flow I2C to flight controller", first("optical-flow"), "i2c-out", flightController, "i2c-in");
   add("Airspeed sensor I2C to flight controller", first("airspeed-sensor"), "i2c-out", flightController, "i2c-in");
 
-  for (const [index, esc] of escs.entries()) {
+  for (const [index, esc] of escs.slice(0, propulsionSlots).entries()) {
     add(`${esc.data.label} main power`, powerModule, "power-out", esc, "power-in");
     add(`${esc.data.label} PWM signal`, flightController, "pwm-out", esc, "pwm-in");
     add(`${motors[index]?.data.label ?? `Motor ${index + 1}`} driven by ${esc.data.label}`, esc, "power-out", motors[index], "power-in");
   }
 
-  for (const motor of motors) {
+  for (const motor of motors.slice(0, propulsionSlots)) {
     add(`${motor.data.label} mounted to frame`, frame, "mount-out", motor, "mount-in");
   }
 
@@ -1451,7 +1601,7 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
                       ? "Adds recovery hardware for failsafe test coverage"
               : `${formatMetric(((selectedMass?.massG ?? 0) / Math.max(totalMassG, 1)) * 100, 1)}% of estimated takeoff mass`,
           selectedNode.data.componentType === "frame"
-            ? `Layout input: ${String(selectedNode.data.properties.layout ?? settings.frame)}`
+            ? `Layout input: ${airframeLabel(String(selectedNode.data.properties.layout ?? settings.frame))}`
             : `Spec model: ${String(selectedNode.data.properties.specModel || selectedNode.data.properties.model || "not set")}`
         ]
       }
@@ -1523,7 +1673,7 @@ function SimulationPreview({
   const gimbal = firstNodeByType(nodes, "gimbal");
   const expectedMotors = expectedMotorCount(settings);
   const slotCount = settings.vehicle === "Rover" ? Math.max(motors.length, 4) : Math.max(motors.length, expectedMotors, 1);
-  const frameLayout = String(frame?.data.properties.layout ?? settings.frame);
+  const frameLayout = airframeLabel(String(frame?.data.properties.layout ?? settings.frame));
   const batteryCells = battery?.data.properties.cells;
   const payloads = [camera, gimbal].filter(Boolean);
   const windLabel =
@@ -2829,7 +2979,7 @@ function App() {
   const gcsTargets = useMemo(() => targetDefaults(settings), [settings]);
   const buildGuide = useMemo(() => buildGuideFor(nodes, settings), [nodes, settings]);
   const performanceEstimate = useMemo(() => analyzePerformance(nodes, settings, selectedNode), [nodes, selectedNode, settings]);
-  const wireSuggestions = useMemo(() => autoWireSuggestions(nodes, edges), [edges, nodes]);
+  const wireSuggestions = useMemo(() => autoWireSuggestions(nodes, edges, settings), [edges, nodes, settings]);
   const bomRows = useMemo(() => bomRowsFor(nodes), [nodes]);
   const comparisonSummary = useMemo(() => {
     if (!comparisonDesign) {
@@ -3054,6 +3204,12 @@ function App() {
   );
 
   const addComponent = (definition: ComponentDefinition) => {
+    const limit = componentLimitStatus(definition.type, nodes, settings);
+    if (!limit.allowed) {
+      setStatusMessage(limit.message ?? `${definition.name} limit reached`);
+      return;
+    }
+
     const node: DesignNode = {
       ...createComponentNode(definition.type, nodes.length),
       position: findOpenNodePosition(nodes, definition.type),
@@ -3076,6 +3232,12 @@ function App() {
       definition = getComponentDefinition(template.baseType);
     } catch {
       setStatusMessage(`${template.name} uses a component type that is no longer available`);
+      return;
+    }
+
+    const limit = componentLimitStatus(definition.type, nodes, settings);
+    if (!limit.allowed) {
+      setStatusMessage(limit.message ?? `${definition.name} limit reached`);
       return;
     }
 
@@ -3171,10 +3333,53 @@ function App() {
     setStatusMessage(`${nextEdges.length} connection${nextEdges.length === 1 ? "" : "s"} added by Auto-Wire`);
   };
 
+  const updateFrameSetting = (frame: string) => {
+    const normalizedFrame = normalizeAirframeValue(frame);
+    const nextSettings = { ...settings, frame: normalizedFrame };
+    const frameUpdatedNodes = nodes.map((node) =>
+      node.data.componentType === "frame"
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              properties: {
+                ...node.data.properties,
+                layout: normalizedFrame
+              }
+            }
+          }
+        : node
+    );
+    const trimmed = trimPropulsionForAirframe(frameUpdatedNodes, nextSettings);
+    const removed = new Set(trimmed.removedIds);
+    const removedNodes = frameUpdatedNodes.filter((node) => removed.has(node.id));
+
+    setSettings(nextSettings);
+    setNodes(trimmed.nodes);
+    setEdges((currentEdges) => currentEdges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target)));
+    setSelectedNodeId((currentSelectedId) => (currentSelectedId && removed.has(currentSelectedId) ? null : currentSelectedId));
+    setSelectedEdgeId((currentSelectedId) => {
+      if (!currentSelectedId) {
+        return null;
+      }
+      const selectedEdgeWasRemoved = edges.some((edge) => edge.id === currentSelectedId && (removed.has(edge.source) || removed.has(edge.target)));
+      return selectedEdgeWasRemoved ? null : currentSelectedId;
+    });
+    setStatusMessage(propulsionTrimMessage(removedNodes, normalizedFrame));
+  };
+
   const updateSelectedProperty = (key: string, value: string | number | boolean) => {
     if (!selectedNode) {
       return;
     }
+
+    if (selectedNode.data.componentType === "frame" && key === "layout" && typeof value === "string") {
+      updateFrameSetting(value);
+      return;
+    }
+
+    const normalizedValue =
+      selectedNode.data.componentType === "frame" && key === "layout" && typeof value === "string" ? normalizeAirframeValue(value) : value;
 
     setNodes((currentNodes) =>
       currentNodes.map((node) =>
@@ -3185,7 +3390,7 @@ function App() {
                 ...node.data,
                 properties: {
                   ...node.data.properties,
-                  [key]: value
+                  [key]: normalizedValue
                 }
               }
             }
@@ -3245,6 +3450,12 @@ function App() {
 
   const duplicateSelectedNode = () => {
     if (!selectedNode) {
+      return;
+    }
+
+    const limit = componentLimitStatus(selectedNode.data.componentType, nodes, settings);
+    if (!limit.allowed) {
+      setStatusMessage(limit.message ?? "Component limit reached");
       return;
     }
 
@@ -3983,23 +4194,28 @@ function App() {
             {filteredCustomComponents.length > 0 ? (
               <div className="custom-library-list">
                 {filteredCustomComponents.map((component) => (
-                  <div className="custom-library-item" key={component.id ?? component.name}>
-                    <button type="button" onClick={() => addCustomComponent(component)}>
-                      <Plus size={15} />
-                      <span>
-                        <strong>{component.name}</strong>
-                        <small>{customComponentSummary(component)}</small>
-                      </span>
-                    </button>
-                    <button
-                      className="icon-button danger"
-                      type="button"
-                      title="Remove custom component"
-                      onClick={() => void handleDeleteCustomComponent(component)}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                  (() => {
+                    const limit = componentLimitStatus(component.baseType, nodes, settings);
+                    return (
+                      <div className="custom-library-item" key={component.id ?? component.name}>
+                        <button type="button" onClick={() => addCustomComponent(component)} disabled={!limit.allowed} title={limit.message}>
+                          <Plus size={15} />
+                          <span>
+                            <strong>{component.name}</strong>
+                            <small>{customComponentSummary(component)}</small>
+                          </span>
+                        </button>
+                        <button
+                          className="icon-button danger"
+                          type="button"
+                          title="Remove custom component"
+                          onClick={() => void handleDeleteCustomComponent(component)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })()
                 ))}
               </div>
             ) : (
@@ -4014,15 +4230,20 @@ function App() {
             </div>
             <div className="custom-library-list">
               {filteredProductTemplates.slice(0, 8).map((component) => (
-                <div className="custom-library-item" key={component.id ?? component.name}>
-                  <button type="button" onClick={() => addCustomComponent(component)}>
-                    <Plus size={15} />
-                    <span>
-                      <strong>{component.name}</strong>
-                      <small>{customComponentSummary(component)}</small>
-                    </span>
-                  </button>
-                </div>
+                (() => {
+                  const limit = componentLimitStatus(component.baseType, nodes, settings);
+                  return (
+                    <div className="custom-library-item" key={component.id ?? component.name}>
+                      <button type="button" onClick={() => addCustomComponent(component)} disabled={!limit.allowed} title={limit.message}>
+                        <Plus size={15} />
+                        <span>
+                          <strong>{component.name}</strong>
+                          <small>{customComponentSummary(component)}</small>
+                        </span>
+                      </button>
+                    </div>
+                  );
+                })()
               ))}
             </div>
           </section>
@@ -4033,8 +4254,16 @@ function App() {
                 <h2>{category}</h2>
                 {components.map((component) => {
                   const Icon = iconMap[component.icon as keyof typeof iconMap] ?? Boxes;
+                  const limit = componentLimitStatus(component.type, nodes, settings);
                   return (
-                    <button className="catalog-item" type="button" key={component.type} onClick={() => addComponent(component)}>
+                    <button
+                      className="catalog-item"
+                      type="button"
+                      key={component.type}
+                      onClick={() => addComponent(component)}
+                      disabled={!limit.allowed}
+                      title={limit.message}
+                    >
                       <Icon size={18} />
                       <span>
                         <strong>{component.name}</strong>
@@ -4505,7 +4734,13 @@ function App() {
 
               <label className="field">
                 <span>Frame</span>
-                <input value={settings.frame} onChange={(event) => setSettings({ ...settings, frame: event.target.value })} />
+                <select value={settings.frame} onChange={(event) => updateFrameSetting(event.target.value)}>
+                  {airframeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <label className="field">

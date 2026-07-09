@@ -1,5 +1,6 @@
 import type { DesignEdge, DesignNode, SimulationSettings } from "./design";
 import { getPort } from "./componentCatalog";
+import { airframeLabel, rotorCountForFrame } from "./airframes";
 
 export type ValidationSeverity = "error" | "warning" | "info";
 
@@ -19,22 +20,14 @@ export interface ValidationResult {
 }
 
 export function expectedMotorCount(settings: SimulationSettings): number {
+  const frame = settings.frame.toLowerCase();
   if (settings.vehicle === "Rover") {
     return 0;
   }
-  if (settings.vehicle === "ArduPlane" && !settings.frame.includes("quadplane")) {
+  if (settings.vehicle === "ArduPlane" && !frame.includes("quadplane")) {
     return 1;
   }
-  if (settings.frame.includes("octa")) {
-    return 8;
-  }
-  if (settings.frame.includes("hexa")) {
-    return 6;
-  }
-  if (settings.frame.includes("tri")) {
-    return 3;
-  }
-  return 4;
+  return rotorCountForFrame(frame);
 }
 
 function nodesOf(nodes: DesignNode[], type: string) {
@@ -72,6 +65,44 @@ function hasConnection(
       (!targetHandle || edge.targetHandle === targetHandle)
     );
   });
+}
+
+export function componentCompatibilityMessage(
+  sourceType: string,
+  targetType: string,
+  sourceHandle?: string | null,
+  targetHandle?: string | null
+) {
+  if (targetType === "motor" && targetHandle === "power-in" && sourceType !== "esc") {
+    return "Motors must be driven from an ESC power output.";
+  }
+
+  if (sourceType === "esc" && sourceHandle === "power-out" && targetType !== "motor") {
+    return "ESC power output can only drive a motor.";
+  }
+
+  if (targetType === "motor" && targetHandle === "mount-in" && sourceType !== "frame") {
+    return "Motors must mount to the selected airframe.";
+  }
+
+  if (targetType === "esc" && targetHandle === "pwm-in" && sourceType !== "flight-controller") {
+    return "ESC signal input must come from the flight controller PWM output.";
+  }
+
+  if (
+    targetType === "esc" &&
+    targetHandle === "power-in" &&
+    sourceType !== "battery" &&
+    sourceType !== "power-module"
+  ) {
+    return "ESC power input must come from the battery or power module.";
+  }
+
+  return undefined;
+}
+
+function incompatibleConnectionMessage(source: DesignNode, target: DesignNode, edge: DesignEdge) {
+  return componentCompatibilityMessage(source.data.componentType, target.data.componentType, edge.sourceHandle, edge.targetHandle);
 }
 
 export function validateDesign(
@@ -129,6 +160,18 @@ export function validateDesign(
         severity: "error",
         title: "Signal mismatch",
         message: `${source.data.label} ${sourcePort.label} is ${sourcePort.kind}, but ${target.data.label} ${targetPort.label} is ${targetPort.kind}.`,
+        nodeIds: [source.id, target.id],
+        edgeIds: [edge.id]
+      });
+    }
+
+    const incompatibleMessage = incompatibleConnectionMessage(source, target, edge);
+    if (incompatibleMessage) {
+      issues.push({
+        id: `edge-${edge.id}-component-compatibility`,
+        severity: "error",
+        title: "Incompatible propulsion connection",
+        message: incompatibleMessage,
         nodeIds: [source.id, target.id],
         edgeIds: [edge.id]
       });
@@ -244,22 +287,54 @@ export function validateDesign(
   }
 
   const requiredMotors = expectedMotorCount(settings);
+  const airframeName = airframeLabel(settings.frame);
   if (motors.length < requiredMotors) {
     issues.push({
       id: "motor-count",
       severity: "error",
       title: "Motor count too low",
-      message: `${settings.frame} expects at least ${requiredMotors} motor${requiredMotors === 1 ? "" : "s"}.`,
+      message: `${airframeName} expects exactly ${requiredMotors} motor${requiredMotors === 1 ? "" : "s"}.`,
       nodeIds: motors.map((motor) => motor.id)
     });
   }
 
-  if (requiredMotors > 0 && escs.length < motors.length) {
+  if (motors.length > requiredMotors) {
     issues.push({
-      id: "esc-count",
+      id: "motor-count-too-high",
+      severity: "error",
+      title: "Too many motors",
+      message: `${airframeName} allows no more than ${requiredMotors} motor${requiredMotors === 1 ? "" : "s"}.`,
+      nodeIds: motors.slice(requiredMotors).map((motor) => motor.id)
+    });
+  }
+
+  if (escs.length < requiredMotors) {
+    issues.push({
+      id: "esc-count-too-low",
+      severity: "error",
+      title: "ESC count too low",
+      message: `${airframeName} expects exactly ${requiredMotors} ESC${requiredMotors === 1 ? "" : "s"}.`,
+      nodeIds: escs.map((esc) => esc.id)
+    });
+  }
+
+  if (escs.length > requiredMotors) {
+    issues.push({
+      id: "esc-count-too-high",
+      severity: "error",
+      title: "Too many ESCs",
+      message: `${airframeName} allows no more than ${requiredMotors} ESC${requiredMotors === 1 ? "" : "s"}.`,
+      nodeIds: escs.slice(requiredMotors).map((esc) => esc.id)
+    });
+  }
+
+  if (requiredMotors > 0 && escs.length !== motors.length) {
+    issues.push({
+      id: "esc-motor-count-match",
       severity: "warning",
-      title: "ESC count lower than motors",
-      message: "Each brushless motor should have a matching ESC."
+      title: "ESC and motor counts differ",
+      message: "Each propulsion rotor should have one motor and one matching ESC.",
+      nodeIds: [...escs, ...motors].map((node) => node.id)
     });
   }
 

@@ -14,7 +14,8 @@
     "design:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
     "test": "node --test server/localOrigin.test.js",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "github:upload": "node scripts/prepare-github-upload.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.9.3",

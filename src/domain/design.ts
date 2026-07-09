@@ -97,7 +97,7 @@ export interface UavDesign {
 
 export const defaultSettings: SimulationSettings = {
   vehicle: "ArduCopter",
-  frame: "quad",
+  frame: "quad-x",
   physicsBackend: "sitl",
   jsonHost: "127.0.0.1",
   simVehiclePath: "",

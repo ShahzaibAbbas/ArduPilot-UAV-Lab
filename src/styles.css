@@ -597,6 +597,61 @@ button:disabled {
   filter: drop-shadow(0 1px 0 #ffffff);
 }
 
+.frame-layout-icon {
+  color: currentColor;
+  overflow: visible;
+}
+
+.frame-layout-icon-rotor .frame-arm {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.35px;
+  opacity: 0.72;
+}
+
+.frame-layout-icon-rotor .frame-rotor {
+  fill: #ffffff;
+  stroke: currentColor;
+  stroke-width: 1.3px;
+}
+
+.frame-layout-icon-rotor .frame-body {
+  fill: currentColor;
+  stroke: #ffffff;
+  stroke-width: 1px;
+}
+
+.frame-layout-icon-rotor .frame-count {
+  fill: #ffffff;
+  font-size: 7px;
+  font-weight: 900;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.frame-layout-icon-plane path,
+.frame-layout-icon-rover path,
+.frame-layout-icon-rover rect,
+.frame-layout-icon-rover circle {
+  fill: #ffffff;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2px;
+}
+
+.node-icon .frame-layout-icon-rotor .frame-arm {
+  stroke-width: 1.6px;
+}
+
+.node-icon .frame-layout-icon-rotor .frame-rotor {
+  stroke-width: 1.55px;
+}
+
+.node-icon .frame-layout-icon-rotor .frame-count {
+  font-size: 7.5px;
+}
+
 .shape-arm,
 .shape-plate,
 .shape-lens {

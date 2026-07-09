@@ -2,6 +2,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { airframeLabel, rotorCountForFrame, simulatorFrameForFrame, usesSimulatorFallback } from "./airframes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.resolve(__dirname, "..", "data");
@@ -503,10 +504,11 @@ export async function buildSitlPlan(design) {
   const settings = design.settings ?? {};
   const detection = await findSimVehicle(settings.simVehiclePath);
   const vehicle = settings.vehicle || "ArduCopter";
+  const selectedFrame = settings.frame || "quad-x";
   const frame =
     settings.physicsBackend === "json"
       ? `JSON:${settings.jsonHost || "127.0.0.1"}`
-      : settings.frame || "quad";
+      : simulatorFrameForFrame(selectedFrame);
   const paramFile = await writeParamFile(design);
   const launcher = launcherFor(detection.path);
   const outputs = gcsOutputs(settings);
@@ -542,6 +544,10 @@ export async function buildSitlPlan(design) {
 
   if (settings.physicsBackend === "json") {
     notes.push("Start your external physics process before launching the JSON backend.");
+  } else if (usesSimulatorFallback(selectedFrame)) {
+    notes.push(
+      `${airframeLabel(selectedFrame)} uses ${rotorCountForFrame(selectedFrame)} rotor slots in the lab. SITL uses ${frame} dynamics as the closest native frame; use the JSON backend for exact custom rotor physics.`
+    );
   }
 
   if (settings.testScenario && settings.testScenario !== "nominal") {
