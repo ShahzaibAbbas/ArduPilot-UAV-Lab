@@ -50,8 +50,11 @@ function edge(
 export function createStarterDesign(): UavDesign {
   const nodes: DesignNode[] = [
     node("frame-1", "frame", "Quad X Frame", 500, 190),
+    node("landing-gear-1", "landing-gear", "Landing Gear", 500, 40),
     node("fc-1", "flight-controller", "ArduPilot FC", 500, 360),
     node("battery-1", "battery", "4S Battery", 40, 250),
+    node("fuse-1", "fuse", "Main Fuse", 150, 250),
+    node("pdb-1", "power-distribution-board", "Power Distribution", 270, 190),
     node("pm-1", "power-module", "Power Module", 270, 315),
     node("gps-1", "gps", "GPS", 730, 220),
     node("compass-1", "compass", "Compass", 730, 390),
@@ -67,7 +70,9 @@ export function createStarterDesign(): UavDesign {
   ];
 
   const edges: DesignEdge[] = [
-    edge("e-bat-pm", "battery-1", "power-out", "pm-1", "power-in"),
+    edge("e-bat-fuse", "battery-1", "power-out", "fuse-1", "power-in"),
+    edge("e-fuse-pdb", "fuse-1", "power-out", "pdb-1", "power-in"),
+    edge("e-pdb-pm", "pdb-1", "power-out", "pm-1", "power-in"),
     edge("e-pm-fc-power", "pm-1", "power-out", "fc-1", "power-in"),
     edge("e-pm-fc-adc", "pm-1", "analog-out", "fc-1", "analog-in"),
     edge("e-gps-fc", "gps-1", "uart-out", "fc-1", "uart-in"),
@@ -77,10 +82,11 @@ export function createStarterDesign(): UavDesign {
     edge("e-frame-m2", "frame-1", "mount-out", "motor-2", "mount-in"),
     edge("e-frame-m3", "frame-1", "mount-out", "motor-3", "mount-in"),
     edge("e-frame-m4", "frame-1", "mount-out", "motor-4", "mount-in"),
-    edge("e-pm-esc1", "pm-1", "power-out", "esc-1", "power-in"),
-    edge("e-pm-esc2", "pm-1", "power-out", "esc-2", "power-in"),
-    edge("e-pm-esc3", "pm-1", "power-out", "esc-3", "power-in"),
-    edge("e-pm-esc4", "pm-1", "power-out", "esc-4", "power-in"),
+    edge("e-frame-landing-gear", "frame-1", "mount-out", "landing-gear-1", "mount-in"),
+    edge("e-pdb-esc1", "pdb-1", "power-out", "esc-1", "power-in"),
+    edge("e-pdb-esc2", "pdb-1", "power-out", "esc-2", "power-in"),
+    edge("e-pdb-esc3", "pdb-1", "power-out", "esc-3", "power-in"),
+    edge("e-pdb-esc4", "pdb-1", "power-out", "esc-4", "power-in"),
     edge("e-fc-esc1", "fc-1", "pwm-out", "esc-1", "pwm-in"),
     edge("e-fc-esc2", "fc-1", "pwm-out", "esc-2", "pwm-in"),
     edge("e-fc-esc3", "fc-1", "pwm-out", "esc-3", "pwm-in"),

@@ -15,6 +15,65 @@ export type PortDirection = "input" | "output";
 
 export type GcsTargetId = "qgc" | "mission-planner";
 
+export type EngineeringDomainId =
+  | "electrical-power"
+  | "wiring-buses"
+  | "mechanical-mounting"
+  | "propulsion"
+  | "avionics-sensors"
+  | "communications"
+  | "safety";
+
+export type EngineeringWorkStatus = "open" | "in-progress" | "blocked" | "verified";
+export type EngineeringPriority = "low" | "medium" | "high" | "critical";
+export type PowerRailId = "battery-bus" | "regulated-5v" | "regulated-12v";
+export type PowerLoadCriticality = "essential" | "mission" | "support";
+
+export interface PowerRailLimit {
+  continuousCurrentA: number;
+  peakCurrentA: number;
+}
+
+export interface PowerLoadOverride {
+  nodeId: string;
+  rail: PowerRailId;
+  enabled: boolean;
+  nominalCurrentA: number;
+  peakCurrentA: number;
+  dutyCyclePercent: number;
+  criticality: PowerLoadCriticality;
+  shedPriority: number;
+  notes: string;
+}
+
+export interface EngineeringWorkItem {
+  id: string;
+  title: string;
+  domainId: EngineeringDomainId;
+  sourceCheckId?: string;
+  manual?: boolean;
+  owner: string;
+  status: EngineeringWorkStatus;
+  priority: EngineeringPriority;
+  dueDate: string;
+  effortHours: number;
+  likelihood: number;
+  impact: number;
+  mitigation: string;
+  evidence: string;
+}
+
+export interface EngineeringManagementState {
+  version: 1;
+  projectPhase: "Concept" | "Preliminary design" | "Critical design" | "Integration" | "Flight test";
+  technicalLead: string;
+  nextReviewDate: string;
+  powerReservePercent: number;
+  railLimits: Record<PowerRailId, PowerRailLimit>;
+  loadOverrides: Record<string, PowerLoadOverride>;
+  workItems: EngineeringWorkItem[];
+}
+
 export interface ComponentPort {
   id: string;
   label: string;
@@ -63,6 +122,11 @@ export interface GcsTargetSettings {
 }
 
 export interface SimulationSettings {
+  missionProfile: "mapping" | "inspection" | "delivery" | "research" | "training" | "custom";
+  missionObjective: string;
+  missionEnvironment: "outdoor" | "indoor" | "mixed";
+  missionPayload: string;
+  missionAltitudeM: number;
   vehicle: "ArduCopter" | "ArduPlane" | "Rover";
   frame: string;
   physicsBackend: "sitl" | "json";
@@ -92,10 +156,16 @@ export interface UavDesign {
   nodes: DesignNode[];
   edges: DesignEdge[];
   settings: SimulationSettings;
+  management?: EngineeringManagementState;
   updatedAt?: string;
 }
 
 export const defaultSettings: SimulationSettings = {
+  missionProfile: "training",
+  missionObjective: "Validate a complete ArduPilot vehicle design in simulation before hardware integration.",
+  missionEnvironment: "outdoor",
+  missionPayload: "None",
+  missionAltitudeM: 30,
   vehicle: "ArduCopter",
   frame: "quad-x",
   physicsBackend: "sitl",

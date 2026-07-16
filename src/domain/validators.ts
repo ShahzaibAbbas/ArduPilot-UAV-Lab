@@ -1,4 +1,4 @@
-import type { DesignEdge, DesignNode, SimulationSettings } from "./design";
+import type { DesignEdge, DesignNode, SignalKind, SimulationSettings } from "./design";
 import { getPort } from "./componentCatalog";
 import { airframeLabel, rotorCountForFrame } from "./airframes";
 
@@ -67,6 +67,34 @@ function hasConnection(
   });
 }
 
+function hasSignalPath(
+  edges: DesignEdge[],
+  nodes: DesignNode[],
+  sourceType: string,
+  targetType: string,
+  signal: SignalKind
+) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const reached = new Set(nodes.filter((node) => node.data.componentType === sourceType).map((node) => node.id));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of edges) {
+      if (!reached.has(edge.source) || reached.has(edge.target)) continue;
+      const source = byId.get(edge.source);
+      const target = byId.get(edge.target);
+      if (!source || !target) continue;
+      const sourcePort = getPort(source.data.componentType, edge.sourceHandle);
+      const targetPort = getPort(target.data.componentType, edge.targetHandle);
+      if (sourcePort?.kind === signal && targetPort?.kind === signal) {
+        reached.add(edge.target);
+        changed = true;
+      }
+    }
+  }
+  return nodes.some((node) => node.data.componentType === targetType && reached.has(node.id));
+}
+
 export function componentCompatibilityMessage(
   sourceType: string,
   targetType: string,
@@ -93,9 +121,12 @@ export function componentCompatibilityMessage(
     targetType === "esc" &&
     targetHandle === "power-in" &&
     sourceType !== "battery" &&
-    sourceType !== "power-module"
+    sourceType !== "power-module" &&
+    sourceType !== "power-distribution-board" &&
+    sourceType !== "fuse" &&
+    sourceType !== "wiring-harness"
   ) {
-    return "ESC power input must come from the battery or power module.";
+    return "ESC power input must come from a battery, protected distribution device, or rated harness.";
   }
 
   return undefined;
@@ -248,12 +279,12 @@ export function validateDesign(
     });
   }
 
-  if (batteries.length > 0 && powerModules.length > 0 && !hasConnection(edges, nodes, "battery", "power-module", "power-in")) {
+  if (batteries.length > 0 && powerModules.length > 0 && !hasSignalPath(edges, nodes, "battery", "power-module", "power")) {
     issues.push({
       id: "battery-not-wired",
       severity: "error",
       title: "Battery not wired",
-      message: "Connect the battery power output to the power module power input.",
+      message: "Connect the battery to the power module through the fuse and distribution path.",
       nodeIds: [batteries[0].id, powerModules[0].id]
     });
   }

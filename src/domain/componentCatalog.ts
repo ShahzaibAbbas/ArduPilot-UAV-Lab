@@ -31,6 +31,20 @@ export const componentCatalog: ComponentDefinition[] = [
     ]
   },
   {
+    type: "landing-gear",
+    name: "Landing Gear",
+    category: "Core",
+    summary: "Skid, leg, wheel, or retractable ground-contact assembly.",
+    icon: "Anchor",
+    ports: [mountIn],
+    properties: [
+      { key: "style", label: "Style", type: "select", defaultValue: "Skids", options: ["Skids", "Fixed legs", "Wheels", "Retractable"] },
+      { key: "groundClearanceMm", label: "Ground clearance", type: "number", defaultValue: 120, min: 10, max: 2000, unit: "mm" },
+      { key: "ratedMassKg", label: "Rated aircraft mass", type: "number", defaultValue: 5, min: 0.1, max: 500, unit: "kg" },
+      { key: "massG", label: "Assembly mass", type: "number", defaultValue: 180, min: 1, max: 50000, unit: "g" }
+    ]
+  },
+  {
     type: "flight-controller",
     name: "ArduPilot FC",
     category: "Core",
@@ -80,6 +94,65 @@ export const componentCatalog: ComponentDefinition[] = [
     properties: [
       { key: "maxAmps", label: "Max current", type: "number", defaultValue: 90, min: 5, max: 300, unit: "A" },
       { key: "regulatedVoltage", label: "Regulator", type: "number", defaultValue: 5.3, min: 4.8, max: 12, unit: "V" }
+    ]
+  },
+  {
+    type: "fuse",
+    name: "Fuse / Circuit Breaker",
+    category: "Power",
+    summary: "Replaceable or resettable overcurrent protection for a power branch.",
+    icon: "Shield",
+    ports: [
+      powerIn,
+      { id: "power-out", label: "PWR", kind: "power", direction: "output", required: true }
+    ],
+    properties: [
+      { key: "ratingAmps", label: "Trip rating", type: "number", defaultValue: 80, min: 0.5, max: 1000, unit: "A" },
+      { key: "voltageRating", label: "Voltage rating", type: "number", defaultValue: 60, min: 5, max: 1000, unit: "V" },
+      { key: "protectionType", label: "Protection", type: "select", defaultValue: "Blade fuse", options: ["Blade fuse", "Cartridge fuse", "Resettable breaker", "Electronic fuse"] },
+      { key: "spareCarried", label: "Spare carried", type: "boolean", defaultValue: true }
+    ]
+  },
+  {
+    type: "power-distribution-board",
+    name: "Power Distribution Board",
+    category: "Power",
+    summary: "High-current distribution, branch protection, and optional auxiliary regulation.",
+    icon: "CircuitBoard",
+    ports: [powerIn, powerOut],
+    properties: [
+      { key: "branchCount", label: "Power branches", type: "number", defaultValue: 8, min: 2, max: 64 },
+      { key: "continuousCurrentA", label: "Continuous current", type: "number", defaultValue: 120, min: 5, max: 1000, unit: "A" },
+      { key: "peakCurrentA", label: "Peak current", type: "number", defaultValue: 180, min: 5, max: 1500, unit: "A" },
+      { key: "protectedOutputs", label: "Protected outputs", type: "boolean", defaultValue: false },
+      { key: "auxVoltage", label: "Auxiliary rail", type: "select", defaultValue: "5 V", options: ["None", "5 V", "12 V", "5 V + 12 V"] }
+    ]
+  },
+  {
+    type: "wiring-harness",
+    name: "Wiring Harness",
+    category: "Core",
+    summary: "Documented power and signal loom with connector, gauge, shielding, and service-loop data.",
+    icon: "Cable",
+    ports: [
+      powerIn,
+      powerOut,
+      { id: "pwm-in", label: "PWM", kind: "pwm", direction: "input" },
+      { id: "pwm-out", label: "PWM", kind: "pwm", direction: "output" },
+      { id: "uart-in", label: "UART", kind: "uart", direction: "input" },
+      { id: "uart-out", label: "UART", kind: "uart", direction: "output" },
+      { id: "i2c-in", label: "I2C", kind: "i2c", direction: "input" },
+      { id: "i2c-out", label: "I2C", kind: "i2c", direction: "output" },
+      { id: "can-in", label: "CAN", kind: "can", direction: "input" },
+      { id: "can-out", label: "CAN", kind: "can", direction: "output" }
+    ],
+    properties: [
+      { key: "powerWireAwg", label: "Power wire gauge", type: "number", defaultValue: 12, min: 2, max: 30, unit: "AWG" },
+      { key: "signalWireAwg", label: "Signal wire gauge", type: "number", defaultValue: 24, min: 16, max: 32, unit: "AWG" },
+      { key: "maxCurrentA", label: "Harness current", type: "number", defaultValue: 40, min: 0.5, max: 500, unit: "A" },
+      { key: "connectorFamily", label: "Connector family", type: "text", defaultValue: "JST-GH / XT60" },
+      { key: "shieldedDataPairs", label: "Shielded data pairs", type: "boolean", defaultValue: true },
+      { key: "serviceLoopMm", label: "Service loop", type: "number", defaultValue: 30, min: 0, max: 500, unit: "mm" }
     ]
   },
   {
@@ -216,6 +289,24 @@ export const componentCatalog: ComponentDefinition[] = [
     ]
   },
   {
+    type: "rc-receiver",
+    name: "RC Receiver",
+    category: "Comms",
+    summary: "Primary or backup pilot command and receiver-link telemetry interface.",
+    icon: "RadioTower",
+    ports: [
+      powerIn,
+      { id: "uart-out", label: "RC", kind: "uart", direction: "output", required: true },
+      { id: "telemetry-in", label: "TLM", kind: "telemetry", direction: "input" }
+    ],
+    properties: [
+      { key: "protocol", label: "Protocol", type: "select", defaultValue: "CRSF", options: ["CRSF", "SBUS", "FPort", "DSM/SRXL2", "IBUS"] },
+      { key: "band", label: "Band", type: "select", defaultValue: "2.4 GHz", options: ["433 MHz", "868 MHz", "915 MHz", "2.4 GHz"] },
+      { key: "diversity", label: "Antenna diversity", type: "boolean", defaultValue: true },
+      { key: "failsafe", label: "Receiver failsafe", type: "select", defaultValue: "No pulses", options: ["No pulses", "Hold", "Preset channels"] }
+    ]
+  },
+  {
     type: "companion-computer",
     name: "Companion Computer",
     category: "Comms",
@@ -297,6 +388,20 @@ export const componentCatalog: ComponentDefinition[] = [
       { key: "model", label: "Model", type: "text", defaultValue: "Global shutter cam" },
       { key: "resolution", label: "Resolution", type: "select", defaultValue: "1080p", options: ["720p", "1080p", "4K"] },
       { key: "massG", label: "Mass", type: "number", defaultValue: 45, min: 5, max: 5000, unit: "g" }
+    ]
+  },
+  {
+    type: "payload-mount",
+    name: "Payload Mount",
+    category: "Payload",
+    summary: "Fixed, isolated, or quick-release mechanical interface for mission equipment.",
+    icon: "PanelsTopLeft",
+    ports: [mountIn, mountOut],
+    properties: [
+      { key: "mountType", label: "Mount type", type: "select", defaultValue: "Vibration isolated", options: ["Rigid", "Vibration isolated", "Quick release", "Rail"] },
+      { key: "ratedPayloadG", label: "Rated payload", type: "number", defaultValue: 1000, min: 10, max: 100000, unit: "g" },
+      { key: "isolationFrequencyHz", label: "Isolation frequency", type: "number", defaultValue: 30, min: 1, max: 500, unit: "Hz" },
+      { key: "retention", label: "Secondary retention", type: "boolean", defaultValue: true }
     ]
   },
   {

@@ -3,21 +3,23 @@ export interface AirframeOption {
   label: string;
   rotorCount: number;
   simulatorFrame: string;
+  vehicle: "ArduCopter" | "ArduPlane" | "Rover";
+  description: string;
 }
 
 const rotorAirframes: AirframeOption[] = [
-  { value: "single-rotor", label: "Single Rotor", rotorCount: 1, simulatorFrame: "heli" },
-  { value: "dual-rotor", label: "Dual Rotor", rotorCount: 2, simulatorFrame: "quad" },
-  { value: "tri-y", label: "Tri Y", rotorCount: 3, simulatorFrame: "tri" },
-  { value: "quad-x", label: "Quad X", rotorCount: 4, simulatorFrame: "quad" },
-  { value: "penta-x", label: "Penta X", rotorCount: 5, simulatorFrame: "quad" },
-  { value: "hexa-x", label: "Hexa X", rotorCount: 6, simulatorFrame: "hexa" },
-  { value: "hepta-x", label: "Hepta X", rotorCount: 7, simulatorFrame: "hexa" },
-  { value: "octa-x", label: "Octa X", rotorCount: 8, simulatorFrame: "octa" },
-  { value: "nona-x", label: "Nona X", rotorCount: 9, simulatorFrame: "octa" },
-  { value: "deca-x", label: "Deca X", rotorCount: 10, simulatorFrame: "octa" },
-  { value: "hendeca-x", label: "Hendeca X", rotorCount: 11, simulatorFrame: "octa" },
-  { value: "dodeca-x", label: "Dodeca X", rotorCount: 12, simulatorFrame: "octa" }
+  { value: "single-rotor", label: "Single Rotor", rotorCount: 1, simulatorFrame: "heli", vehicle: "ArduCopter", description: "Helicopter-style single main rotor." },
+  { value: "dual-rotor", label: "Dual Rotor", rotorCount: 2, simulatorFrame: "quad", vehicle: "ArduCopter", description: "Two-rotor experimental platform." },
+  { value: "tri-y", label: "Tri Y", rotorCount: 3, simulatorFrame: "tri", vehicle: "ArduCopter", description: "Lightweight tricopter with yaw mechanism." },
+  { value: "quad-x", label: "Quad X", rotorCount: 4, simulatorFrame: "quad", vehicle: "ArduCopter", description: "Balanced general-purpose multirotor." },
+  { value: "penta-x", label: "Penta X", rotorCount: 5, simulatorFrame: "quad", vehicle: "ArduCopter", description: "Five-rotor research configuration." },
+  { value: "hexa-x", label: "Hexa X", rotorCount: 6, simulatorFrame: "hexa", vehicle: "ArduCopter", description: "Higher payload and motor-out margin." },
+  { value: "hepta-x", label: "Hepta X", rotorCount: 7, simulatorFrame: "hexa", vehicle: "ArduCopter", description: "Seven-rotor experimental platform." },
+  { value: "octa-x", label: "Octa X", rotorCount: 8, simulatorFrame: "octa", vehicle: "ArduCopter", description: "Heavy-lift and redundant propulsion." },
+  { value: "nona-x", label: "Nona X", rotorCount: 9, simulatorFrame: "octa", vehicle: "ArduCopter", description: "Nine-rotor custom platform." },
+  { value: "deca-x", label: "Deca X", rotorCount: 10, simulatorFrame: "octa", vehicle: "ArduCopter", description: "Ten-rotor custom platform." },
+  { value: "hendeca-x", label: "Hendeca X", rotorCount: 11, simulatorFrame: "octa", vehicle: "ArduCopter", description: "Eleven-rotor custom platform." },
+  { value: "dodeca-x", label: "Dodeca X", rotorCount: 12, simulatorFrame: "octa", vehicle: "ArduCopter", description: "Twelve-rotor heavy-lift platform." }
 ];
 
 const numericAirframes: AirframeOption[] = Array.from({ length: 20 }, (_, index) => {
@@ -26,17 +28,28 @@ const numericAirframes: AirframeOption[] = Array.from({ length: 20 }, (_, index)
     value: `${rotorCount}-rotor-x`,
     label: `${rotorCount} Rotor X`,
     rotorCount,
-    simulatorFrame: "octa"
+    simulatorFrame: "octa",
+    vehicle: "ArduCopter" as const,
+    description: `${rotorCount}-rotor custom research configuration.`
   };
 });
 
 const legacyAirframes: AirframeOption[] = [
-  { value: "fixed-wing", label: "Fixed Wing", rotorCount: 1, simulatorFrame: "plane" },
-  { value: "rover", label: "Rover", rotorCount: 0, simulatorFrame: "rover" }
+  { value: "fixed-wing", label: "Fixed Wing", rotorCount: 1, simulatorFrame: "plane", vehicle: "ArduPlane", description: "Efficient long-range wing platform." },
+  { value: "rover", label: "Rover", rotorCount: 0, simulatorFrame: "rover", vehicle: "Rover", description: "Ground vehicle for navigation and autonomy." }
 ];
 
 export const airframeOptions: AirframeOption[] = [...rotorAirframes, ...numericAirframes, ...legacyAirframes];
 export const airframeValues = airframeOptions.map((option) => option.value);
+
+export function airframesForVehicle(vehicle: AirframeOption["vehicle"]) {
+  return airframeOptions.filter((option) => option.vehicle === vehicle);
+}
+
+export function vehicleForAirframe(frame: string | undefined): AirframeOption["vehicle"] {
+  const normalized = normalizeAirframeValue(frame);
+  return airframeOptions.find((option) => option.value === normalized)?.vehicle ?? "ArduCopter";
+}
 
 export function airframeLabel(value: string) {
   return airframeOptions.find((option) => option.value === value)?.label ?? value;
