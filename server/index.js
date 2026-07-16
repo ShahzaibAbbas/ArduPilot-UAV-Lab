@@ -16,7 +16,7 @@ import {
   generateSimulatorBundleArtifact
 } from "./artifacts.js";
 import { deleteCustomComponent, listCustomComponents, saveCustomComponent } from "./customComponents.js";
-import { listDesigns, saveDesign } from "./designStore.js";
+import { DESIGN_ID_PATTERN, listDesigns, saveDesign } from "./designStore.js";
 import { compileGazeboPlugins, gazeboStatus } from "./gazebo.js";
 import { clearLogs, listLogs, loggerError, loggerInfo, loggerWarn, readLogFileTail } from "./logger.js";
 import { isAllowedLocalOrigin } from "./localOrigin.js";
@@ -46,7 +46,7 @@ let shuttingDown = false;
 let httpServer;
 
 const designSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().regex(DESIGN_ID_PATTERN, "Design id must use the canonical UUID format.").optional(),
   name: z.string().min(1),
   nodes: z.array(z.unknown()),
   edges: z.array(z.unknown()),
@@ -128,7 +128,7 @@ function requireLocalOrigin(request, response, next) {
 function stopActiveProcesses() {
   for (const [pid, child] of activeProcesses) {
     try {
-      child.kill("SIGTERM");
+      child.kill(process.platform === "win32" ? undefined : "SIGTERM");
     } catch {
       // The process may have already exited.
     }
@@ -516,7 +516,7 @@ app.post("/api/sitl/launch", async (request, response, next) => {
     const plan = await buildSitlPlan(design);
 
     if (!plan.available) {
-      response.status(409).json({ error: "sim_vehicle.py was not found. Generate the plan and run it manually after installing ArduPilot SITL." });
+      response.status(409).json({ error: "sim_vehicle.py was not found after searching native paths, Cygwin, and WSL. Locate the file or ArduPilot checkout and try again." });
       return;
     }
 
@@ -527,7 +527,7 @@ app.post("/api/sitl/launch", async (request, response, next) => {
     });
 
     activeProcesses.set(child.pid, child);
-    loggerInfo("sitl", `SITL launched as PID ${child.pid}`, { command: plan.commandLine, cwd: plan.cwd });
+    loggerInfo("sitl", `Firmware build and SITL process started as PID ${child.pid}`, { command: plan.commandLine, cwd: plan.cwd, source: plan.source });
     child.stdout?.on("data", (chunk) => {
       loggerInfo("sitl", chunk.toString("utf8").trim(), { pid: child.pid, stream: "stdout" });
     });
@@ -537,6 +537,10 @@ app.post("/api/sitl/launch", async (request, response, next) => {
     child.once("exit", () => {
       activeProcesses.delete(child.pid);
       loggerInfo("sitl", `SITL process exited`, { pid: child.pid });
+    });
+    child.on("error", (error) => {
+      activeProcesses.delete(child.pid);
+      loggerError("sitl", `SITL process failed to start`, { pid: child.pid, error: error.message });
     });
 
     response.json({ pid: child.pid, plan });
@@ -556,7 +560,7 @@ app.delete("/api/sitl/processes/:pid", (request, response) => {
     response.status(404).json({ error: "Process not found" });
     return;
   }
-  child.kill("SIGTERM");
+  child.kill(process.platform === "win32" ? undefined : "SIGTERM");
   activeProcesses.delete(pid);
   loggerInfo("sitl", `SITL process stopped`, { pid });
   response.json({ stopped: pid });

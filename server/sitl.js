@@ -1,12 +1,36 @@
+import { execFile } from "node:child_process";
 import { mkdir, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { promisify } from "node:util";
 import { airframeLabel, rotorCountForFrame, simulatorFrameForFrame, usesSimulatorFallback } from "./airframes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.resolve(__dirname, "..", "data");
 const exportsDir = path.join(dataDir, "exports");
+const execFileAsync = promisify(execFile);
+const runtimeSearchScript = `
+for candidate in \
+  "$ARDUPILOT_HOME/Tools/autotest/sim_vehicle.py" \
+  "$ARDUPILOT_ROOT/Tools/autotest/sim_vehicle.py" \
+  "$HOME/ardupilot/Tools/autotest/sim_vehicle.py" \
+  "$HOME/ArduPilot/Tools/autotest/sim_vehicle.py" \
+  "/opt/ardupilot/Tools/autotest/sim_vehicle.py"
+do
+  if [ -f "$candidate" ]; then printf '%s\\n' "$candidate"; exit 0; fi
+done
+candidate=$(command -v sim_vehicle.py 2>/dev/null || true)
+if [ -n "$candidate" ]; then printf '%s\\n' "$candidate"; exit 0; fi
+find "$HOME" -maxdepth 6 -type f -path '*/Tools/autotest/sim_vehicle.py' -print -quit 2>/dev/null
+`;
+const runtimeCustomPathScript = `
+for candidate in "$1" "$1/sim_vehicle.py" "$1/Tools/autotest/sim_vehicle.py"
+do
+  if [ -f "$candidate" ]; then printf '%s\\n' "$candidate"; exit 0; fi
+done
+exit 1
+`;
 
 async function exists(target) {
   try {
@@ -23,11 +47,9 @@ async function resolveSimVehiclePath(inputPath) {
   }
 
   const normalized = path.resolve(String(inputPath).trim().replace(/^"|"$/g, ""));
-  const candidates = [
-    normalized,
-    path.join(normalized, "sim_vehicle.py"),
-    path.join(normalized, "Tools", "autotest", "sim_vehicle.py")
-  ];
+  const candidates = path.basename(normalized).toLowerCase() === "sim_vehicle.py"
+    ? [normalized]
+    : [path.join(normalized, "sim_vehicle.py"), path.join(normalized, "Tools", "autotest", "sim_vehicle.py")];
 
   for (const candidate of candidates) {
     if (await exists(candidate)) {
@@ -38,10 +60,28 @@ async function resolveSimVehiclePath(inputPath) {
   return undefined;
 }
 
-function findOnPath(binary) {
+async function runFile(command, args, timeout = 8000) {
+  try {
+    const { stdout = "", stderr = "" } = await execFileAsync(command, args, {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout,
+      maxBuffer: 2 * 1024 * 1024
+    });
+    return { ok: true, stdout: String(stdout).replace(/\0/g, ""), stderr: String(stderr).replace(/\0/g, "") };
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: String(error?.stdout ?? "").replace(/\0/g, ""),
+      stderr: String(error?.stderr ?? error?.message ?? "").replace(/\0/g, "")
+    };
+  }
+}
+
+async function findOnPath(binary) {
   const locator = process.platform === "win32" ? "where" : "which";
-  const result = spawnSync(locator, [binary], { encoding: "utf8" });
-  if (result.status !== 0) {
+  const result = await runFile(locator, [binary], 4000);
+  if (!result.ok) {
     return undefined;
   }
   return result.stdout
@@ -50,58 +90,228 @@ function findOnPath(binary) {
     .find(Boolean);
 }
 
-async function findSimVehicle(customPath) {
-  const notes = [];
-
-  if (customPath && String(customPath).trim()) {
-    const custom = await resolveSimVehiclePath(customPath);
-    if (custom) {
-      return { available: true, path: custom, notes };
-    }
-    notes.push("The configured sim_vehicle.py path was not found. Use the exact file path or an ArduPilot checkout directory.");
-  }
-
-  const roots = [process.env.ARDUPILOT_HOME, process.env.ARDUPILOT_ROOT].filter(Boolean);
-
-  for (const root of roots) {
-    const candidate = path.join(root, "Tools", "autotest", "sim_vehicle.py");
-    if (await exists(candidate)) {
-      return { available: true, path: candidate, notes };
-    }
-  }
-
-  const onPath = findOnPath("sim_vehicle.py");
-  if (onPath) {
-    return { available: true, path: onPath, notes };
-  }
-
-  notes.push("Set ARDUPILOT_HOME to an ArduPilot checkout or add Tools/autotest to PATH.");
-  notes.push("On Windows, ArduPilot SITL is normally run from Linux or WSL2.");
-  return { available: false, notes };
+function firstLine(value) {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
 }
 
-function inferArdupilotRoot(simVehiclePath) {
-  if (!simVehiclePath) {
-    return undefined;
-  }
+export function parseWslDistros(output) {
+  return String(output ?? "")
+    .replace(/\0/g, "")
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^docker-desktop(?:-data)?$/i.test(line));
+}
 
-  const autotestDir = path.dirname(simVehiclePath);
-  const toolsDir = path.dirname(autotestDir);
-  if (path.basename(autotestDir).toLowerCase() === "autotest" && path.basename(toolsDir).toLowerCase() === "tools") {
-    return path.dirname(toolsDir);
-  }
+export function windowsPathToWslPath(target) {
+  const normalized = String(target ?? "").replace(/\\/g, "/");
+  const drive = normalized.match(/^([A-Za-z]):\/(.*)$/);
+  return drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2]}` : normalized;
+}
 
+function inferRuntimeRoot(simVehiclePath, source = "native") {
+  if (!simVehiclePath) return undefined;
+  const pathApi = source === "native" ? path : path.posix;
+  const autotestDir = pathApi.dirname(simVehiclePath);
+  const toolsDir = pathApi.dirname(autotestDir);
+  if (pathApi.basename(autotestDir).toLowerCase() === "autotest" && pathApi.basename(toolsDir).toLowerCase() === "tools") {
+    return pathApi.dirname(toolsDir);
+  }
   return autotestDir;
 }
 
-function launcherFor(simVehiclePath) {
-  if (!simVehiclePath) {
-    return { command: "sim_vehicle.py", prefixArgs: [] };
+function nativeDetection(simVehiclePath, searched, notes = []) {
+  const root = inferRuntimeRoot(simVehiclePath, "native");
+  return {
+    available: true,
+    source: "native",
+    path: simVehiclePath,
+    root,
+    displayPath: simVehiclePath,
+    configPath: simVehiclePath,
+    notes,
+    searched
+  };
+}
+
+async function wslDistributions() {
+  if (process.platform !== "win32") return [];
+  const result = await runFile("wsl.exe", ["--list", "--quiet"], 6000);
+  return result.ok ? parseWslDistros(result.stdout) : [];
+}
+
+async function searchWsl(distros, requested) {
+  for (const distro of distros) {
+    if (requested?.distro && requested.distro.toLowerCase() !== distro.toLowerCase()) continue;
+    const args = requested?.path
+      ? ["-d", distro, "--exec", "sh", "-lc", runtimeCustomPathScript, "uav-lab", requested.path]
+      : ["-d", distro, "--exec", "sh", "-lc", runtimeSearchScript];
+    const result = await runFile("wsl.exe", args, 10000);
+    const simPath = firstLine(result.stdout);
+    if (result.ok && simPath) {
+      return {
+        available: true,
+        source: "wsl",
+        path: simPath,
+        root: inferRuntimeRoot(simPath, "wsl"),
+        displayPath: `WSL · ${distro} · ${simPath}`,
+        configPath: `wsl://${distro}${simPath}`,
+        distro,
+        notes: [],
+        searched: []
+      };
+    }
   }
+  return undefined;
+}
+
+function cygwinBashCandidates() {
+  if (process.platform !== "win32") return [];
+  const roots = [process.env.CYGWIN_HOME, "C:\\cygwin64", "C:\\cygwin", "C:\\tools\\cygwin"].filter(Boolean);
+  return [...new Set(roots.map((root) => path.join(root, "bin", "bash.exe")))];
+}
+
+async function searchCygwin(requestedPath) {
+  for (const bashPath of cygwinBashCandidates()) {
+    if (!(await exists(bashPath))) continue;
+    const args = requestedPath
+      ? ["-lc", runtimeCustomPathScript, "uav-lab", requestedPath]
+      : ["-lc", runtimeSearchScript];
+    const result = await runFile(bashPath, args, 10000);
+    const simPath = firstLine(result.stdout);
+    if (result.ok && simPath) {
+      return {
+        available: true,
+        source: "cygwin",
+        path: simPath,
+        root: inferRuntimeRoot(simPath, "cygwin"),
+        displayPath: `Cygwin · ${simPath}`,
+        configPath: `cygwin:${simPath}`,
+        bashPath,
+        notes: [],
+        searched: []
+      };
+    }
+  }
+  return undefined;
+}
+
+function parseCustomRuntimePath(value) {
+  const input = String(value ?? "").trim().replace(/^"|"$/g, "");
+  const wslUrl = input.match(/^wsl:\/\/([^/]+)(\/.*)$/i);
+  if (wslUrl) return { source: "wsl", distro: wslUrl[1], path: wslUrl[2] };
+  const wslShort = input.match(/^([^:\\/]{2,}):(\/.*)$/);
+  if (wslShort) return { source: "wsl", distro: wslShort[1], path: wslShort[2] };
+  const wslUnc = input.match(/^\\\\wsl(?:\.localhost)?\$?\\([^\\]+)\\(.+)$/i);
+  if (wslUnc) return { source: "wsl", distro: wslUnc[1], path: `/${wslUnc[2].replace(/\\/g, "/")}` };
+  const cygwin = input.match(/^cygwin:(\/.*)$/i);
+  if (cygwin) return { source: "cygwin", path: cygwin[1] };
+  if (input.startsWith("/")) return { source: "posix", path: input };
+  return { source: "native", path: input };
+}
+
+async function findSimVehicle(customPath) {
+  const notes = [];
+  const searched = [];
+  let distros;
+
+  if (customPath && String(customPath).trim()) {
+    const requested = parseCustomRuntimePath(customPath);
+    searched.push("configured location");
+    if (requested.source === "native") {
+      const custom = await resolveSimVehiclePath(requested.path);
+      if (custom) return nativeDetection(custom, searched);
+    } else if (requested.source === "cygwin") {
+      const custom = await searchCygwin(requested.path);
+      if (custom) return { ...custom, searched };
+    } else {
+      if (requested.source === "posix") {
+        const cygwin = await searchCygwin(requested.path);
+        if (cygwin) return { ...cygwin, searched };
+      }
+      distros = await wslDistributions();
+      const wsl = await searchWsl(distros, requested.source === "wsl" ? requested : { path: requested.path });
+      if (wsl) return { ...wsl, searched };
+    }
+    notes.push("The configured location was not found; automatic Windows, Cygwin, and WSL discovery continued.");
+  }
+
+  searched.push("Windows/native environment and common folders");
+  const roots = [
+    process.env.ARDUPILOT_HOME,
+    process.env.ARDUPILOT_ROOT,
+    path.join(os.homedir(), "ardupilot"),
+    path.join(os.homedir(), "ArduPilot"),
+    path.join(os.homedir(), "Documents", "ardupilot"),
+    path.join(os.homedir(), "Desktop", "ardupilot"),
+    path.join(os.homedir(), "Downloads", "ardupilot")
+  ].filter(Boolean);
+  for (const root of roots) {
+    const candidate = await resolveSimVehiclePath(root);
+    if (candidate) return nativeDetection(candidate, searched, notes);
+  }
+  const onPath = await findOnPath("sim_vehicle.py");
+  if (onPath) return nativeDetection(onPath, searched, notes);
+
   if (process.platform === "win32") {
-    return { command: "python", prefixArgs: [simVehiclePath] };
+    searched.push("Cygwin installations");
+    const cygwin = await searchCygwin();
+    if (cygwin) return { ...cygwin, notes, searched };
+
+    searched.push("WSL distributions");
+    distros ??= await wslDistributions();
+    const wsl = await searchWsl(distros);
+    if (wsl) return { ...wsl, notes, searched };
   }
-  return { command: simVehiclePath, prefixArgs: [] };
+
+  notes.push("Automatic search checked Windows/native paths, Cygwin, and WSL but did not find sim_vehicle.py.");
+  notes.push("Locate the file or ArduPilot checkout and paste its path, for example C:\\ardupilot, wsl://Ubuntu/home/user/ardupilot, or cygwin:/home/user/ardupilot.");
+  return { available: false, notes, searched };
+}
+
+async function runtimePathFor(hostPath, detection) {
+  if (detection.source === "wsl" && detection.distro) {
+    const result = await runFile("wsl.exe", ["-d", detection.distro, "--exec", "wslpath", "-a", "-u", hostPath], 5000);
+    return firstLine(result.stdout) || windowsPathToWslPath(hostPath);
+  }
+  if (detection.source === "cygwin" && detection.bashPath) {
+    const cygpath = path.join(path.dirname(detection.bashPath), "cygpath.exe");
+    const result = await runFile(cygpath, ["-a", "-u", hostPath], 5000);
+    return firstLine(result.stdout) || hostPath;
+  }
+  return hostPath;
+}
+
+function launcherFor(detection) {
+  if (!detection?.available || !detection.path) {
+    return { command: "sim_vehicle.py", prefixArgs: [], hostCwd: process.cwd(), displayCwd: process.cwd() };
+  }
+  if (detection.source === "wsl") {
+    return {
+      command: "wsl.exe",
+      prefixArgs: ["-d", detection.distro, "--cd", detection.root, "--exec", "python3", detection.path],
+      hostCwd: process.cwd(),
+      displayCwd: detection.root
+    };
+  }
+  if (detection.source === "cygwin") {
+    return {
+      command: detection.bashPath,
+      prefixArgs: ["-lc", 'cd "$1" && shift && exec python3 "$@"', "uav-lab", detection.root, detection.path],
+      hostCwd: path.dirname(path.dirname(detection.bashPath)),
+      displayCwd: detection.root
+    };
+  }
+  const command = process.platform === "win32" ? "python" : detection.path;
+  return {
+    command,
+    prefixArgs: process.platform === "win32" ? [detection.path] : [],
+    hostCwd: detection.root || process.cwd(),
+    displayCwd: detection.root || process.cwd()
+  };
 }
 
 function shellQuote(value) {
@@ -510,7 +720,8 @@ export async function buildSitlPlan(design) {
       ? `JSON:${settings.jsonHost || "127.0.0.1"}`
       : simulatorFrameForFrame(selectedFrame);
   const paramFile = await writeParamFile(design);
-  const launcher = launcherFor(detection.path);
+  const launcher = launcherFor(detection);
+  const runtimeParamFile = await runtimePathFor(paramFile.path, detection);
   const outputs = gcsOutputs(settings);
   const swarm = buildSwarmLayout(settings);
 
@@ -522,7 +733,7 @@ export async function buildSitlPlan(design) {
     frame,
     "--console",
     "--map",
-    `--add-param-file=${paramFile.path}`,
+    `--add-param-file=${runtimeParamFile}`,
     ...outputs.map((output) => `--out=udp:${output.host}:${output.port}`)
   ];
 
@@ -539,7 +750,7 @@ export async function buildSitlPlan(design) {
   }
 
   const commandLine = [launcher.command, ...args].map(shellQuote).join(" ");
-  const cwd = process.env.ARDUPILOT_HOME || process.env.ARDUPILOT_ROOT || inferArdupilotRoot(detection.path) || process.cwd();
+  const cwd = launcher.hostCwd;
   const notes = [...detection.notes];
 
   if (settings.physicsBackend === "json") {
@@ -592,10 +803,12 @@ export async function buildSitlPlan(design) {
 
   return {
     available: detection.available,
+    source: detection.source,
     command: launcher.command,
     args,
     commandLine,
     cwd,
+    displayCwd: launcher.displayCwd,
     paramFile: paramFile.path,
     outputs,
     swarm,
@@ -605,13 +818,21 @@ export async function buildSitlPlan(design) {
 
 export async function getSystemStatus(customPath) {
   const detection = await findSimVehicle(customPath);
-  const launcher = launcherFor(detection.path);
+  const launcher = launcherFor(detection);
   return {
     sitl: {
       available: detection.available,
+      source: detection.source,
       path: detection.path,
+      displayPath: detection.displayPath,
+      configPath: detection.configPath,
+      root: detection.root,
+      distro: detection.distro,
       command: detection.available ? launcher.command : undefined,
-      notes: detection.available ? [`Found sim_vehicle.py at ${detection.path}`] : detection.notes
+      searched: detection.searched,
+      notes: detection.available
+        ? [`Found sim_vehicle.py in ${detection.source === "wsl" ? `WSL ${detection.distro}` : detection.source}.`]
+        : detection.notes
     }
   };
 }

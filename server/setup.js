@@ -49,7 +49,7 @@ function fixFor(key, platform) {
     git: windows ? "Install Git for Windows and reopen the launcher." : "Install git with your package manager.",
     python: windows ? "Install Python 3 and enable Add python.exe to PATH." : "Install python3 with your package manager.",
     mavproxy: "Install MAVProxy with pip once Python is available: python -m pip install MAVProxy.",
-    simVehicle: "Set ARDUPILOT_HOME or ARDUPILOT_ROOT to an ArduPilot checkout, or put Tools/autotest on PATH.",
+    simVehicle: "Locate sim_vehicle.py or an ArduPilot checkout. The lab searches Windows paths, Cygwin, and every user WSL distribution automatically.",
     wsl: "Install WSL2 from an elevated PowerShell with wsl --install if you plan to run ArduPilot SITL from Linux on Windows.",
     dataFolders: "Run the app launcher once; it creates data, exports, logs, and backup folders."
   };

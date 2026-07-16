@@ -717,13 +717,15 @@ export function generateSimulatorBundleArtifact(design) {
   const prearm = generatePrearmArtifact(design);
   const bridge = generateJsonBridgeArtifact(design);
   const gazebo = generateGazeboWorldArtifact(design);
+  const bomCsv = generateBomCsvArtifact(design);
+  const bomHtml = generateBomHtmlArtifact(design);
   const files = [
     { name: "README.md", content: simulatorReadme(design) },
     { name: `design/${safeName}.uav.json`, content: `${JSON.stringify(design, null, 2)}\n` },
     { name: `ardupilot/${safeName}.param`, content: generateParamContent(design) },
     { name: `mission/${mission.fileName}`, content: mission.content },
-    { name: `bom/${generateBomCsvArtifact(design).fileName}`, content: generateBomCsvArtifact(design).content },
-    { name: `bom/${generateBomHtmlArtifact(design).fileName}`, content: generateBomHtmlArtifact(design).content },
+    { name: `bom/${bomCsv.fileName}`, content: bomCsv.content },
+    { name: `bom/${bomHtml.fileName}`, content: bomHtml.content },
     { name: `scenario/${prearm.fileName}`, content: prearm.content },
     { name: `json-bridge/${bridge.fileName}`, content: bridge.content },
     { name: `gazebo/worlds/${gazebo.fileName}`, content: gazebo.content },

@@ -48,7 +48,7 @@ export function runTerminalCommand(command, { cwd, timeoutMs = 60000, env = proc
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      child.kill(process.platform === "win32" ? undefined : "SIGTERM");
     }, timeoutMs);
     timer.unref?.();
 

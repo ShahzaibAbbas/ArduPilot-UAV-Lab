@@ -307,7 +307,7 @@ function onMessage(message, remote) {
 
   for (const packet of parseMavlinkDatagram(message)) {
     updateVehicle(packet, remote);
-    handleMissionPacket(packet, remote);
+    handleMissionPacket(packet);
   }
 }
 
@@ -732,7 +732,7 @@ function commandFromRequest(request) {
 
 function findVehicle(sysid, compid) {
   const candidates = Array.from(vehicles.values()).filter((vehicle) => vehicle.sysid === sysid);
-  if (compid) {
+  if (compid != null) {
     return candidates.find((vehicle) => vehicle.compid === compid) ?? candidates[0];
   }
   return candidates.find((vehicle) => vehicle.heartbeat) ?? candidates[0];
@@ -799,7 +799,7 @@ export function telemetryStatus() {
 
 export async function sendMavlinkCommand(request) {
   const targetSystem = Number(request.sysid);
-  const requestedComponent = Number(request.compid || 0);
+  const requestedComponent = Number(request.compid ?? 0);
   if (!Number.isInteger(targetSystem) || targetSystem <= 0 || targetSystem > 255) {
     throw new Error("Target MAVLink system id must be between 1 and 255.");
   }
@@ -855,7 +855,7 @@ export function missionSyncStatus() {
 
 export async function uploadMission(request) {
   const targetSystem = Number(request.sysid);
-  const requestedComponent = Number(request.compid || 0);
+  const requestedComponent = Number(request.compid ?? 0);
   const items = missionItemsFromText(request.missionText);
   const vehicle = findVehicle(targetSystem, requestedComponent);
   if (!vehicle) {
@@ -886,7 +886,7 @@ export async function uploadMission(request) {
 
 export async function downloadMission(request) {
   const targetSystem = Number(request.sysid);
-  const requestedComponent = Number(request.compid || 0);
+  const requestedComponent = Number(request.compid ?? 0);
   const vehicle = findVehicle(targetSystem, requestedComponent);
   if (!vehicle) {
     throw new Error(`No live vehicle with system id ${targetSystem} has been seen.`);
