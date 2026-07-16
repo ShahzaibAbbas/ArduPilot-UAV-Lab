@@ -4,11 +4,9 @@ data/
 backups/
 github uploading/
 Updates/
-.env
-.env.*
-!.env.example
-.DS_Store
-*.log
-*.zip
+.codex/
 coverage/
-.vite/
+.env
+*.log
+.DS_Store
+Thumbs.db

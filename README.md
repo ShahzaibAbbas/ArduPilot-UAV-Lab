@@ -1,38 +1,49 @@
 # ArduPilot UAV Lab
 
-A local design-and-simulation workspace for assembling UAV components, validating connections, exporting an ArduPilot parameter starter file, and preparing SITL launch commands.
+Design a UAV as one connected system, review it across every engineering discipline, and carry the same design evidence into ArduPilot configuration and simulation.
 
-## What is included
+## Your first 10 minutes
 
-- Component catalog for frame, flight controller, battery, power module, ESC, motors, GPS, compass, rangefinder, telemetry, camera, and gimbal.
-- Extended UAV subsystem catalog for airspeed sensors, optical flow, companion computers, ADS-B/Remote ID, recovery parachutes, and buzzer/status LED hardware.
-- Visual connection canvas powered by React Flow.
-- Object-specific block shapes for fast visual scanning.
-- Compatibility checks for port direction, signal type, power path, motor/ESC coverage, frame motor count, ArduPilot sensor wiring, GPS-denied sensor coverage, parachute trigger wiring, and battery failsafe threshold order.
-- Mission test settings for nominal, wind gust, low battery, GPS denied, and payload endurance scenarios.
-- Local AI-style performance estimator for mass, energy, endurance, range, payload margin, mission reserve, wind penalty, current margin, and assumptions from selected components and specs.
-- JSON design export and server-side design save.
-- Workspace save/load using `.saq` files.
-- Persistent custom component templates saved under `data/library/`.
-- ArduPilot `.param` starter export from the selected components, including two-layer battery failsafe thresholds/actions and starter params for airspeed, optical flow, and parachute components.
-- SITL command planning for native SITL frames, multi-vehicle swarm counts/layout metadata, and the ArduPilot JSON physics backend.
-- MAVLink UDP telemetry reader with live command/control actions for arm, disarm, takeoff, mode changes, RTL, land, and custom `COMMAND_LONG` messages.
-- In-app Logs panel backed by `data/logs/server.log` for API, terminal, maintenance, and SITL lifecycle events.
-- In-app workspace Terminal panel for local diagnostics and simulator commands.
-- Scenario exports for QGC waypoint missions, pre-arm test checklists, JSON physics bridge process templates, Gazebo world/plugin files, and ZIP simulator bundles.
-- Direct Gazebo plugin helpers that detect supported local installs, generate a CMake plugin project, and compile it when CMake, pkg-config, a C++ compiler, and Gazebo development packages are available.
-- In-app software update button for Git checkouts. It runs `git pull --ff-only`, `npm install`, and `npm run build`.
+1. Start the app with the launcher for your operating system below.
+2. Select **New** and complete the Mission → Airframe → Systems wizard. The lab creates the required engineering baseline automatically.
+3. Connect power, signal, control, propulsion, and mechanical interfaces on the visual canvas.
+4. Work through the seven domain tabs; resolve highlighted paths and re-run each acceptance check.
+5. Save a design snapshot, review the verification report, export the starter artifacts, and run a mission scenario or SITL plan.
 
-Contact: shahzaib.abbas@hotmail.com
+The guided runbook follows six stages: **Define mission**, **Choose airframe**, **Add systems**, **Integrate systems**, **Verify design**, and **Run simulation**.
 
-## Research-guided additions
+## Seven engineering domains
 
-The newest simulator controls were based on public UAV simulation and design references:
+- **Electrical & Power** - storage, conversion, protection, sensing, and load distribution.
+- **Wiring & Buses** - harnesses, connector direction, signal compatibility, and digital/analog buses.
+- **Mechanical & Mounting** - structure, retention, landing interfaces, clearances, and payload mounting.
+- **Propulsion** - motors, ESCs, command paths, frame coverage, and thrust-producing hardware.
+- **Avionics & Sensors** - flight computing, navigation, environment sensing, and onboard perception.
+- **Communications** - RC, telemetry, MAVLink, traffic-awareness, and regulatory broadcast links.
+- **Safety** - fault protection, failsafes, alerts, containment, and recovery hardware.
 
-- ArduPilot battery failsafe docs: low and critical voltage/capacity thresholds plus automated actions such as Land, RTL, and SmartRTL.
-- PX4/Gazebo simulation docs: wind speed, gusts, object-avoidance/perception simulation, and failure-test workflows.
-- ArduPilot airspeed, optical-flow, parachute, and simulation-on-hardware docs: component parameters, simulated sensors, and defaults-file workflow.
-- Multirotor design guidance from ArduPilot and Tyto Robotics: motor/prop/ESC/battery matching, endurance targets, and flight-time estimation loops.
+Each domain presents an objective, acceptance checks, affected components or paths, recommended next actions, and a re-check control.
+
+## Components and capabilities
+
+- Build with airframes, flight controllers, batteries, power modules, ESCs, motors, navigation sensors, rangefinders, airspeed sensors, optical flow, telemetry, companion computers, ADS-B/Remote ID, cameras, gimbals, parachutes, and alerts.
+- Model electrical and mechanical integration with **fuses**, **power distribution boards (PDBs)**, **rated wiring harnesses**, **RC receivers**, **landing gear**, and **payload mounts**.
+- Validate port direction, signal type, battery-to-load power paths, overcurrent protection, wire ratings, motor/ESC coverage, mounting paths, control links, sensor wiring, recovery outputs, and battery failsafe order.
+- Estimate mass, energy, endurance, range, payload and mission reserve, wind penalty, and current margin from the selected components and recorded specifications.
+- Save/load `.saq` workspaces, export JSON designs and ArduPilot `.param` starters, and maintain reusable custom component templates under `data/library/`.
+- Prepare native and JSON-backend SITL commands, multi-vehicle layouts, QGC waypoint missions, pre-arm checklists, Gazebo assets, and ZIP simulator bundles.
+- Read MAVLink UDP telemetry and issue arm, disarm, takeoff, mode, RTL, land, and custom `COMMAND_LONG` actions.
+- Use the in-app terminal, lifecycle logs, Gazebo helper tooling, and conservative Git-based software updater.
+
+## Evidence and verification
+
+The workspace keeps the engineering record connected:
+
+`Design snapshot` -> `Domain verification report` -> `Simulation result`
+
+A design is ready for final verification only when all domain checks are complete and no design-validation errors remain. Save the current revision before exporting or simulating so the evidence refers to the same configuration.
+
+> **Safety:** Performance estimates and automated checks are engineering aids. They do not replace manufacturer datasheets, current/voltage/thermal derating, mechanical inspection, continuity and insulation checks, bench testing, propeller-off tests, or a controlled flight-test plan.
 
 ## Launchers
 
@@ -62,10 +73,6 @@ The API server watches the launcher process. Closing the launcher command window
 
 They install the files needed for this web app. ArduPilot SITL itself is still detected separately through `sim_vehicle.py`, `ARDUPILOT_HOME`, `ARDUPILOT_ROOT`, or `PATH`.
 
-Designed by UAS Doctoral Tech.
-
-Support email: shahzaib.abbas@hotmail.com
-
 ## Manual Run
 
 ```powershell
@@ -89,7 +96,9 @@ If the app was copied as a ZIP or upload package without a `.git` folder, the bu
 
 ## Workspace files
 
-Use the canvas toolbar to create a new empty space, reset to the starter workspace, save the current workspace, or load a saved workspace.
+Use the canvas toolbar to start a new mission, reset to the starter workspace, save the current workspace, or load a saved workspace. **New** opens a three-step wizard and does not replace the current workspace until **Create workspace** is selected.
+
+The generated mission workspace includes a protected battery → fuse → PDB → power-module path, a documented wiring harness, airframe and landing interfaces, ArduPilot flight control, navigation, telemetry, status/failsafe hardware, frame-matched propulsion, and the mission systems selected in the wizard.
 
 Saved workspace files use the `.saq` extension. The file is JSON with a small format header and the current design payload, including components, links, settings, and product specifications.
 
@@ -97,17 +106,21 @@ Saved workspace files use the `.saq` extension. The file is JSON with a small fo
 
 Before preparing a GitHub upload or deleting generated files, follow `UPLOAD_RULES.md`. It defines the local-only `github uploading/` staging folder and the ZIP backup workflow.
 
-## UI study
-
-The FHD operations layout was guided by the Open Design local-first studio model.
-
 ## ArduPilot SITL setup
 
-The backend looks for `sim_vehicle.py` in either:
+The backend searches for `sim_vehicle.py` in this order:
 
+- A location entered in the Simulation panel
 - `%ARDUPILOT_HOME%\Tools\autotest\sim_vehicle.py`
 - `%ARDUPILOT_ROOT%\Tools\autotest\sim_vehicle.py`
 - `sim_vehicle.py` on `PATH`
+- Common native ArduPilot checkout folders
+- Cygwin installations and user home folders
+- User WSL distributions such as Ubuntu
+
+Accepted manual locations include a Windows file or checkout folder, `wsl://Ubuntu/home/user/ardupilot`, `Ubuntu:/home/user/ardupilot`, a `\\wsl$\Ubuntu\...` path, or `cygwin:/home/user/ardupilot`. If every automatic source fails, the app opens a location request with these examples.
+
+The Simulation action is **Build & Launch**: `sim_vehicle.py` builds the selected ArduPilot firmware when needed and then starts SITL. WSL builds run through `wsl.exe` in the detected ArduPilot checkout, and generated Windows parameter-file paths are translated with `wslpath`. Cygwin builds run through its Bash environment and translate paths with `cygpath`.
 
 ArduPilot's docs describe `sim_vehicle.py` as the standard SITL startup tool and show `-v` for vehicle selection, `-f` for frame selection, `--console`, `--map`, `-L` for locations, and `--add-param-file` for loading parameter files:
 
@@ -117,7 +130,7 @@ For external physics, this app generates `-f JSON:<host>`, matching ArduPilot's 
 
 https://ardupilot.org/dev/docs/sitl-with-JSON.html
 
-On Windows, ArduPilot SITL is commonly run under Linux or WSL2. If SITL is not installed, the app still generates the full command for manual execution.
+On Windows, ArduPilot SITL is commonly run under Linux or WSL2. If SITL is not installed, the app still generates the full plan and asks the user to locate `sim_vehicle.py` before Build & Launch.
 
 ## Project layout
 
