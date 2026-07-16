@@ -3,18 +3,26 @@ import type { ComponentDefinition, UavDesign } from "../domain/design";
 export interface SystemStatus {
   sitl: {
     available: boolean;
+    source?: "native" | "cygwin" | "wsl";
     path?: string;
+    displayPath?: string;
+    configPath?: string;
+    root?: string;
+    distro?: string;
     command?: string;
     notes: string[];
+    searched?: string[];
   };
 }
 
 export interface SitlPlan {
   available: boolean;
+  source?: "native" | "cygwin" | "wsl";
   commandLine: string;
   command?: string;
   args: string[];
   cwd: string;
+  displayCwd?: string;
   paramFile?: string;
   outputs?: Array<{ id?: string; name: string; host: string; port: number }>;
   swarm?: {
