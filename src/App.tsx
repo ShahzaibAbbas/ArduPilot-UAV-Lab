@@ -20,17 +20,20 @@ import {
   type NodeProps
 } from "@xyflow/react";
 import {
+  Anchor,
   AlertTriangle,
   Battery,
   Boxes,
+  Cable,
   Camera,
+  Check,
   CheckCircle2,
   CircleDot,
+  CircuitBoard,
   Compass,
   Copy,
   Cpu,
   Download,
-  ExternalLink,
   FilePlus,
   FileJson,
   FolderOpen,
@@ -59,6 +62,8 @@ import {
   Redo2,
   Undo2,
   Wind,
+  Wrench,
+  X,
   Zap,
   type LucideIcon
 } from "lucide-react";
@@ -76,7 +81,20 @@ import {
 import { createStarterDesign } from "./domain/starterDesign";
 import { productTemplates } from "./domain/productTemplates";
 import { componentCompatibilityMessage, expectedMotorCount, validateDesign } from "./domain/validators";
-import { airframeLabel, airframeOptions, normalizeAirframeValue, rotorCountForFrame } from "./domain/airframes";
+import { airframeLabel, airframeOptions, airframesForVehicle, normalizeAirframeValue, rotorCountForFrame, vehicleForAirframe } from "./domain/airframes";
+import { createMissionDesign, type NewMissionDraft } from "./domain/missionTemplates";
+import { assessEngineeringDomains, summarizeEngineeringAssessments } from "./domain/engineeringDomains";
+import {
+  DomainReviewPanel,
+  DomainStrip,
+  LabEvidence,
+  LabHeader,
+  LabRunbook,
+  type EngineeringDomainId,
+  type EngineeringDomainView,
+  type WorkflowStage
+} from "./components/LabWorkspaceChrome";
+import { NewMissionWizard } from "./components/NewMissionWizard";
 import {
   buildBomCsvFile,
   buildBomHtmlFile,
@@ -125,13 +143,16 @@ import {
 } from "./lib/api";
 
 const iconMap = {
+  Anchor,
   AlertTriangle,
   Battery,
   Boxes,
+  Cable,
   Camera,
   CheckCircle2,
   CircleDot,
   Compass,
+  CircuitBoard,
   Cpu,
   Gauge,
   MapPin,
@@ -142,7 +163,9 @@ const iconMap = {
   ShieldCheck,
   Siren,
   Wind,
+  Wrench,
   Zap,
+  Shield: ShieldCheck,
   Frame: Boxes
 };
 
@@ -838,6 +861,7 @@ function settingsWithDefaults(settings?: Partial<SimulationSettings>): Simulatio
   return {
     ...merged,
     frame: normalizeAirframeValue(merged.frame),
+    vehicle: vehicleForAirframe(merged.frame),
     gcsTargets: targetDefaults(merged).map((target) => ({ ...target }))
   };
 }
@@ -2361,14 +2385,18 @@ function TelemetryMap({ status }: { status: TelemetryStatus | null }) {
 }
 
 function MissionPanel({
+  settings,
   telemetry,
   mission,
+  importedMissionReady,
   onUpload,
   onDownload,
   onSaveDownloaded
 }: {
+  settings: SimulationSettings;
   telemetry: TelemetryStatus | null;
   mission: MissionSyncStatus | null;
+  importedMissionReady: boolean;
   onUpload: (vehicle: TelemetryStatus["vehicles"][number]) => void;
   onDownload: (vehicle: TelemetryStatus["vehicles"][number]) => void;
   onSaveDownloaded: () => void;
@@ -2390,6 +2418,15 @@ function MissionPanel({
         <span className={`status-pill ${mission?.active ? "neutral" : "good"}`}>{mission?.active ? "Syncing" : "Ready"}</span>
       </div>
 
+      <section className="mission-brief-card">
+        <small>{settings.missionProfile.replace("-", " ")} mission</small>
+        <strong>{settings.missionObjective}</strong>
+        <span>
+          {settings.missionEnvironment} · {settings.missionDistanceKm} km · {settings.missionAltitudeM} m target · {settings.missionPayload}
+        </span>
+        {importedMissionReady ? <em>Imported waypoint route is ready and will be used for the next upload.</em> : null}
+      </section>
+
       <section className="mission-sync-panel">
         <h2>Vehicle</h2>
         {vehicles.length === 0 ? (
@@ -2410,7 +2447,7 @@ function MissionPanel({
         <div className="action-grid">
           <button type="button" disabled={!selectedVehicle || mission?.active} onClick={() => selectedVehicle && onUpload(selectedVehicle)}>
             <Play size={16} />
-            <span>Upload</span>
+            <span>{importedMissionReady ? "Upload imported" : "Upload generated"}</span>
           </button>
           <button type="button" disabled={!selectedVehicle || mission?.active} onClick={() => selectedVehicle && onDownload(selectedVehicle)}>
             <Download size={16} />
@@ -2480,7 +2517,7 @@ function BomPanel({
         </button>
         <button type="button" onClick={onExportHtml}>
           <FileJson size={16} />
-          <span>PDF Page</span>
+          <span>Printable HTML</span>
         </button>
       </div>
       <section className="bom-table">
@@ -2637,10 +2674,18 @@ function App() {
   const [hoveredConnection, setHoveredConnection] = useState<HoveredConnection | null>(null);
   const [contextMenu, setContextMenu] = useState<ObjectContextMenu | null>(null);
   const [tab, setTab] = useState<AppTab>("inspector");
+  const [activeDomain, setActiveDomain] = useState<EngineeringDomainId>("electrical-power");
+  const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("integrate");
+  const [newMissionWizard, setNewMissionWizard] = useState<{ initialStep: 0 | 1 | 2 } | null>(null);
+  const [sidebarView, setSidebarView] = useState<"runbook" | "catalog">("runbook");
+  const [rightPanelMode, setRightPanelMode] = useState<"domain" | "tools">("domain");
+  const [workspaceSaved, setWorkspaceSaved] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [statusMessage, setStatusMessage] = useState("Ready");
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [sitlPlan, setSitlPlan] = useState<SitlPlan | null>(null);
+  const [sitlAction, setSitlAction] = useState<"locating" | "planning" | "launching" | null>(null);
+  const [manualSimLocationOpen, setManualSimLocationOpen] = useState(false);
   const [telemetryStatus, setTelemetryStatus] = useState<TelemetryStatus | null>(null);
   const [telemetryPort, setTelemetryPort] = useState(14552);
   const [customComponents, setCustomComponents] = useState<CustomComponentTemplate[]>([]);
@@ -2655,12 +2700,14 @@ function App() {
   const [setupDiagnostics, setSetupDiagnostics] = useState<SetupDiagnostics | null>(null);
   const [setupChecking, setSetupChecking] = useState(false);
   const [missionStatus, setMissionStatus] = useState<MissionSyncStatus | null>(null);
+  const [importedMissionText, setImportedMissionText] = useState<string | null>(null);
   const [paramExplanations, setParamExplanations] = useState<ParamExplanation[]>([]);
   const [scenarioRunResult, setScenarioRunResult] = useState<ScenarioRunResult | null>(null);
   const [comparisonDesign, setComparisonDesign] = useState<UavDesign | null>(null);
   const workspaceFileInputRef = useRef<HTMLInputElement | null>(null);
   const missionFileInputRef = useRef<HTMLInputElement | null>(null);
   const comparisonFileInputRef = useRef<HTMLInputElement | null>(null);
+  const manualLocationDialogRef = useRef<HTMLDialogElement | null>(null);
   const historyCurrentRef = useRef<WorkspaceHistoryEntry>(initialHistoryEntry);
   const historyApplyingRef = useRef(false);
   const undoStackRef = useRef<WorkspaceHistoryEntry[]>([]);
@@ -2706,9 +2753,19 @@ function App() {
 
   useEffect(() => {
     getSystemStatus()
-      .then(setSystemStatus)
+      .then((status) => {
+        setSystemStatus(status);
+        setManualSimLocationOpen(!status.sitl.available);
+      })
       .catch((error: Error) => setStatusMessage(error.message));
   }, []);
+
+  useEffect(() => {
+    const dialog = manualLocationDialogRef.current;
+    if (!dialog) return;
+    if (manualSimLocationOpen && !dialog.open) dialog.showModal();
+    if (!manualSimLocationOpen && dialog.open) dialog.close();
+  }, [manualSimLocationOpen]);
 
   useEffect(() => {
     listCustomComponents()
@@ -2786,6 +2843,10 @@ function App() {
   );
 
   useEffect(() => {
+    setWorkspaceSaved(false);
+  }, [designName, edges, nodes, settings]);
+
+  useEffect(() => {
     const nextEntry = createHistoryEntry(historySnapshot);
 
     if (historyApplyingRef.current) {
@@ -2828,6 +2889,34 @@ function App() {
   }, [applyHistorySnapshot, replaceRedoStack, replaceUndoStack]);
 
   const validation = useMemo(() => validateDesign(nodes, edges, settings), [nodes, edges, settings]);
+  const domainAssessments = useMemo(() => assessEngineeringDomains(nodes, edges, settings), [nodes, edges, settings]);
+  const domainSummary = useMemo(() => summarizeEngineeringAssessments(domainAssessments), [domainAssessments]);
+  const domainViews = useMemo<EngineeringDomainView[]>(
+    () =>
+      domainAssessments.map((domain) => ({
+        ...domain,
+        description:
+          domain.id === "electrical-power"
+            ? "Confirm voltage, current, protection, grounding, and wire sizing across the complete power path."
+            : domain.description,
+        shortLabel:
+          domain.id === "wiring-buses"
+            ? "Wiring & Buses"
+            : domain.id === "mechanical-mounting"
+              ? "Mechanical"
+              : domain.id === "avionics-sensors"
+                ? "Avionics"
+                : domain.id === "communications"
+                  ? "Comms"
+                  : domain.label,
+        checks: domain.checks.map((check) => ({
+          ...check,
+          recommendation: check.passed ? undefined : check.description
+        }))
+      })),
+    [domainAssessments]
+  );
+  const activeDomainView = domainViews.find((domain) => domain.id === activeDomain) ?? domainViews[0]!;
 
   const clearSelection = useCallback(() => {
     setNodes((currentNodes) => currentNodes.map((node): DesignNode => ({ ...node, selected: false })));
@@ -2845,6 +2934,7 @@ function App() {
       setSelectedNodeId(nodeId);
       setSelectedEdgeId(null);
       setTab("inspector");
+      setRightPanelMode("tools");
       setStatusMessage(node ? `${node.data.label} selected` : "Component selected");
     },
     [nodes]
@@ -2858,6 +2948,7 @@ function App() {
       setSelectedEdgeId(edgeId);
       setSelectedNodeId(null);
       setTab("inspector");
+      setRightPanelMode("tools");
       setStatusMessage(edge ? `${connectionDetails(edge, nodes).label} connection selected` : "Connection selected");
     },
     [edges, nodes]
@@ -3335,7 +3426,8 @@ function App() {
 
   const updateFrameSetting = (frame: string) => {
     const normalizedFrame = normalizeAirframeValue(frame);
-    const nextSettings = { ...settings, frame: normalizedFrame };
+    const nextVehicle = vehicleForAirframe(normalizedFrame);
+    const nextSettings = { ...settings, vehicle: nextVehicle, frame: normalizedFrame };
     const frameUpdatedNodes = nodes.map((node) =>
       node.data.componentType === "frame"
         ? {
@@ -3348,7 +3440,15 @@ function App() {
               }
             }
           }
-        : node
+        : node.data.componentType === "flight-controller"
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                properties: { ...node.data.properties, firmware: nextVehicle }
+              }
+            }
+          : node
     );
     const trimmed = trimPropulsionForAirframe(frameUpdatedNodes, nextSettings);
     const removed = new Set(trimmed.removedIds);
@@ -3366,6 +3466,14 @@ function App() {
       return selectedEdgeWasRemoved ? null : currentSelectedId;
     });
     setStatusMessage(propulsionTrimMessage(removedNodes, normalizedFrame));
+  };
+
+  const updateVehicleSetting = (vehicle: SimulationSettings["vehicle"]) => {
+    const compatibleFrames = airframesForVehicle(vehicle);
+    const frame = compatibleFrames.some((candidate) => candidate.value === settings.frame)
+      ? settings.frame
+      : compatibleFrames[0]?.value ?? "quad-x";
+    updateFrameSetting(frame);
   };
 
   const updateSelectedProperty = (key: string, value: string | number | boolean) => {
@@ -3561,8 +3669,8 @@ function App() {
 
   const handleMissionUpload = async (vehicle: TelemetryStatus["vehicles"][number]) => {
     try {
-      const mission = await buildMissionFile(currentDesign());
-      const result = await uploadMission(vehicle.sysid, vehicle.compid, mission.content);
+      const generatedMission = importedMissionText ? null : await buildMissionFile(currentDesign());
+      const result = await uploadMission(vehicle.sysid, vehicle.compid, importedMissionText ?? generatedMission!.content);
       setMissionStatus(result.mission);
       setStatusMessage(result.mission.message);
       refreshLogs();
@@ -3625,6 +3733,10 @@ function App() {
     setContextMenu(null);
     setTab("inspector");
     setSitlPlan(null);
+    setScenarioRunResult(null);
+    setImportedMissionText(null);
+    setWorkspaceSaved(false);
+    setWorkflowStage("integrate");
     setStatusMessage(message);
     if (normalized.nodes.length > 0) {
       window.setTimeout(() => {
@@ -3634,15 +3746,17 @@ function App() {
   };
 
   const handleNewSpace = () => {
-    applyWorkspaceDesign(
-      {
-        name: "Untitled Space",
-        nodes: [],
-        edges: [],
-        settings: settingsWithDefaults()
-      },
-      "New empty workspace created"
-    );
+    setNewMissionWizard({ initialStep: 0 });
+    setWorkflowStage("define");
+    setStatusMessage("New mission setup opened; the current workspace is unchanged until Create workspace is selected");
+  };
+
+  const handleCreateMission = (draft: NewMissionDraft) => {
+    applyWorkspaceDesign(createMissionDesign(draft), `${draft.projectName || "Mission"} workspace created with a complete engineering baseline`);
+    setNewMissionWizard(null);
+    setSidebarView("runbook");
+    setRightPanelMode("domain");
+    setActiveDomain("electrical-power");
   };
 
   const handleResetWorkspace = () => {
@@ -3698,7 +3812,8 @@ function App() {
     try {
       const fileResult = await handleSaveWorkspaceFile(design);
       if (fileResult === "cancelled") {
-        return;
+        setWorkspaceSaved(false);
+        return false;
       }
 
       try {
@@ -3707,8 +3822,12 @@ function App() {
       } catch (error) {
         console.warn("Local design catalog save failed", error);
       }
+      setWorkspaceSaved(true);
+      return true;
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Workspace save failed");
+      setWorkspaceSaved(false);
+      return false;
     }
   };
 
@@ -3776,6 +3895,17 @@ function App() {
     }
   };
 
+  const handleRefreshGazeboStatus = async () => {
+    setStatusMessage("Checking Gazebo installations...");
+    try {
+      const status = await getGazeboStatus();
+      setGazeboStatus(status);
+      setStatusMessage(status.selected ? `${status.selected.label} is ready` : status.notes[0] ?? "No Gazebo installation detected");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Gazebo check failed");
+    }
+  };
+
   const handleMavlinkCommand = async (command: MavlinkCommandRequest) => {
     const result = await sendMavlinkCommand(command);
     setStatusMessage(result.message);
@@ -3803,7 +3933,8 @@ function App() {
         ...currentSettings,
         missionDistanceKm: Math.round(distanceKm * 100) / 100
       }));
-      setStatusMessage(`${file.name} imported, mission distance set to ${distanceKm.toFixed(2)} km`);
+      setImportedMissionText(content);
+      setStatusMessage(`${file.name} imported and ready for upload; mission distance set to ${distanceKm.toFixed(2)} km`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not import mission");
     }
@@ -3840,6 +3971,16 @@ function App() {
     }
   };
 
+  const handleRefreshLogs = async () => {
+    try {
+      const result = await getLogs(250);
+      setLogs(result.logs);
+      setStatusMessage(`${result.logs.length} log entries refreshed`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not refresh logs");
+    }
+  };
+
   const handleRunTerminalCommand = async () => {
     const command = terminalCommand.trim();
     if (!command) {
@@ -3873,26 +4014,85 @@ function App() {
     }
   };
 
-  const handleLocateSimVehicle = async () => {
-    const result = await locateSimVehicle(settings.simVehiclePath);
-    setSystemStatus(result);
-    setStatusMessage(result.sitl.available ? `Found sim_vehicle.py at ${result.sitl.path}` : result.sitl.notes[0] ?? "sim_vehicle.py not found");
+  const handleLocateSimVehicle = async (candidatePath = settings.simVehiclePath) => {
+    setSitlAction("locating");
+    setStatusMessage("Searching Windows, Cygwin, and WSL for sim_vehicle.py...");
+    try {
+      const result = await locateSimVehicle(candidatePath);
+      setSystemStatus(result);
+      if (result.sitl.available) {
+        setManualSimLocationOpen(false);
+        if (result.sitl.configPath) {
+          setSettings((current) => ({ ...current, simVehiclePath: result.sitl.configPath! }));
+        }
+        setStatusMessage(`Found sim_vehicle.py: ${result.sitl.displayPath ?? result.sitl.path}`);
+      } else {
+        setManualSimLocationOpen(true);
+        setStatusMessage(result.sitl.notes[0] ?? "sim_vehicle.py was not found; locate it to continue");
+      }
+      return result;
+    } catch (error) {
+      setManualSimLocationOpen(true);
+      setStatusMessage(error instanceof Error ? error.message : "SITL search failed");
+      return null;
+    } finally {
+      setSitlAction(null);
+    }
   };
 
   const handlePlan = async () => {
-    const result = await buildSitlPlan(currentDesign());
-    setSitlPlan(result.plan);
-    setStatusMessage("SITL plan ready");
+    setSitlAction("planning");
+    try {
+      const result = await buildSitlPlan(currentDesign());
+      setSitlPlan(result.plan);
+      if (!result.plan.available) {
+        setManualSimLocationOpen(true);
+        setStatusMessage("SITL plan generated, but sim_vehicle.py must be located before firmware can be built");
+      } else {
+        setStatusMessage(`SITL plan ready for ${result.plan.source ?? "detected"} runtime`);
+      }
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not generate the SITL plan");
+    } finally {
+      setSitlAction(null);
+    }
   };
 
   const handleLaunch = async () => {
-    const result = await launchSitl(currentDesign());
-    setSitlPlan(result.plan);
-    setStatusMessage(`SITL launched as PID ${result.pid}`);
+    setSitlAction("launching");
+    setStatusMessage("Starting firmware build with sim_vehicle.py...");
+    try {
+      const located = await locateSimVehicle(settings.simVehiclePath);
+      setSystemStatus(located);
+      if (!located.sitl.available) {
+        setManualSimLocationOpen(true);
+        setStatusMessage("sim_vehicle.py was not found. Locate the file or ArduPilot checkout to build firmware.");
+        return;
+      }
+      if (located.sitl.configPath && located.sitl.configPath !== settings.simVehiclePath) {
+        setSettings((current) => ({ ...current, simVehiclePath: located.sitl.configPath! }));
+      }
+      const result = await launchSitl({
+        ...currentDesign(),
+        settings: { ...settings, simVehiclePath: located.sitl.configPath ?? settings.simVehiclePath }
+      });
+      setSitlPlan(result.plan);
+      setStatusMessage(`Firmware build and SITL launch started as PID ${result.pid}. Build output is available in Logs.`);
+      refreshLogs();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Firmware build and SITL launch failed";
+      if (/sim_vehicle\.py|not found/i.test(message)) setManualSimLocationOpen(true);
+      setStatusMessage(message);
+    } finally {
+      setSitlAction(null);
+    }
   };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (newMissionWizard || manualSimLocationOpen) {
+        return;
+      }
       const key = event.key.toLowerCase();
       const commandKey = event.ctrlKey || event.metaKey;
 
@@ -3937,7 +4137,7 @@ function App() {
 
       if (commandKey && event.shiftKey && key === "s") {
         event.preventDefault();
-        void handleSaveWorkspaceFile();
+        void handleSave();
         return;
       }
 
@@ -4025,6 +4225,8 @@ function App() {
     handleSave,
     handleSaveWorkspaceFile,
     handleUndo,
+    manualSimLocationOpen,
+    newMissionWizard,
     removeSelectedEdge,
     removeSelectedNode,
     selectedEdge,
@@ -4068,81 +4270,137 @@ function App() {
       )
     : null;
 
+  const openToolPanel = (nextTab: AppTab) => {
+    setTab(nextTab);
+    setRightPanelMode("tools");
+  };
+
+  const handleDomainChange = (domain: EngineeringDomainId) => {
+    setActiveDomain(domain);
+    setRightPanelMode("domain");
+    setStatusMessage(`${domainViews.find((candidate) => candidate.id === domain)?.label ?? "Engineering"} review opened`);
+  };
+
+  const handleRunbookStage = (stage: WorkflowStage) => {
+    setWorkflowStage(stage);
+    if (stage === "define" || stage === "airframe" || stage === "systems") {
+      const initialStep = stage === "define" ? 0 : stage === "airframe" ? 1 : 2;
+      setNewMissionWizard({ initialStep });
+      setStatusMessage(`${stage === "define" ? "Mission" : stage === "airframe" ? "Airframe" : "System"} setup opened`);
+      return;
+    }
+    if (stage === "integrate") {
+      setRightPanelMode("domain");
+      return;
+    }
+    openToolPanel(stage === "verify" ? "validation" : "simulation");
+  };
+
+  const handleSaveAndMark = async () => {
+    if (await handleSave()) setWorkspaceSaved(true);
+  };
+
+  const handleCompleteIntegration = () => {
+    if (workflowStage === "define" || workflowStage === "airframe" || workflowStage === "systems") {
+      handleRunbookStage(workflowStage);
+      return;
+    }
+    if (workflowStage === "verify") {
+      if (validation.counts.error > 0) {
+        openToolPanel("validation");
+        setStatusMessage(`${validation.counts.error} design error${validation.counts.error === 1 ? "" : "s"} must be resolved before simulation`);
+      } else {
+        setWorkflowStage("simulate");
+        openToolPanel("simulation");
+        setStatusMessage("Verification passed. Firmware build and SITL simulation are ready.");
+      }
+      return;
+    }
+    if (workflowStage === "simulate") {
+      openToolPanel("simulation");
+      setStatusMessage("Simulation tools opened");
+      return;
+    }
+    if (domainSummary.completed < domainSummary.total) {
+      const incomplete = domainViews.find((domain) => domain.completed < domain.total);
+      if (incomplete) {
+        setActiveDomain(incomplete.id);
+        const nodeId = incomplete.checks.find((check) => !check.passed)?.nodeIds?.[0];
+        if (nodeId) {
+          selectNode(nodeId);
+          focusNodeById(nodeId);
+        }
+      }
+      setRightPanelMode("domain");
+      setStatusMessage(`${domainSummary.total - domainSummary.completed} multidisciplinary checks still need review`);
+      return;
+    }
+    setWorkflowStage("verify");
+    openToolPanel("validation");
+    setStatusMessage("All engineering domains are complete. Final design verification is ready.");
+  };
+
+  const handleShowAffectedDomainCheck = (check: EngineeringDomainView["checks"][number]) => {
+    const nodeId = check.nodeIds?.[0];
+    if (nodeId) {
+      selectNode(nodeId);
+      focusNodeById(nodeId);
+    }
+    setStatusMessage(`${check.label}: ${check.detail}`);
+  };
+
+  const handleRunDomainCheck = () => {
+    const remaining = activeDomainView.total - activeDomainView.completed;
+    const checkedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    setStatusMessage(
+      remaining > 0
+        ? `${activeDomainView.label} re-checked at ${checkedAt}: ${remaining} check${remaining === 1 ? "" : "s"} need attention`
+        : `${activeDomainView.label} re-checked at ${checkedAt}: all acceptance checks passed`
+    );
+  };
+
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <img className="brand-logo" src="/uas-doctoral-tech-logo.svg" alt="UAS Doctoral Tech logo" />
-          <div>
-            <h1>ArduPilot UAV Lab</h1>
-            <input value={designName} onChange={(event) => setDesignName(event.target.value)} aria-label="Design name" />
-            <small className="brand-credit">Design by UAS Doctoral Tech</small>
-            <small className="brand-email">shahzaib.abbas@hotmail.com</small>
-            <span className="brand-links">
-              <a href="https://www.youtube.com/@uasdoctoraltech" target="_blank" rel="noreferrer" title="UAS Doctoral Tech YouTube">
-                <ExternalLink size={10} />
-                YouTube
-              </a>
-              <a
-                href="https://www.udemy.com/course/basic-mission-planner-development-uav-simulation-setup/"
-                target="_blank"
-                rel="noreferrer"
-                title="Mission Planner UAV simulation course"
-              >
-                <ExternalLink size={10} />
-                Udemy
-              </a>
-            </span>
-          </div>
-        </div>
+      <LabHeader
+        designName={designName}
+        stage={workflowStage}
+        onDesignNameChange={(value) => {
+          setDesignName(value);
+          setWorkspaceSaved(false);
+        }}
+        onSave={() => void handleSaveAndMark()}
+        onComplete={handleCompleteIntegration}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+      />
 
-        <div className="health-strip">
-          <div className="health-score">
-            <span>{validation.score}</span>
-            <small>Score</small>
-          </div>
-          <div className="health-count error">{validation.counts.error} Errors</div>
-          <div className="health-count warning">{validation.counts.warning} Warnings</div>
-          <div className="health-count info">{validation.counts.info} Notes</div>
-        </div>
-
-        <div className="top-actions">
-          <button type="button" title="Save workspace file (Ctrl+S)" aria-keyshortcuts="Control+S" onClick={() => void handleSave()}>
-            <Save size={17} />
-            <span>Save</span>
-          </button>
-          <button type="button" title="Export JSON (Ctrl+E)" aria-keyshortcuts="Control+E" onClick={() => void handleJsonDownload()}>
-            <FileJson size={17} />
-            <span>JSON</span>
-          </button>
-          <button type="button" title="Export parameters (Ctrl+P)" aria-keyshortcuts="Control+P" onClick={handleParamsDownload}>
-            <Download size={17} />
-            <span>Params</span>
-          </button>
-          <button type="button" title="Update software from Git and compile" onClick={handleSoftwareUpdate} disabled={softwareUpdating}>
-            <RefreshCw size={17} />
-            <span>{softwareUpdating ? "Updating" : "Update"}</span>
-          </button>
-          <button type="button" title="Undo last workspace change (Ctrl+Z)" aria-keyshortcuts="Control+Z" onClick={handleUndo} disabled={!canUndo}>
-            <Undo2 size={17} />
-            <span>Undo</span>
-          </button>
-          <button type="button" title="Redo workspace change (Ctrl+Y)" aria-keyshortcuts="Control+Y" onClick={handleRedo} disabled={!canRedo}>
-            <Redo2 size={17} />
-            <span>Redo</span>
-          </button>
-        </div>
-      </header>
-
-      <main className="workspace">
-        <aside className="catalog-panel">
+      <main className="workspace lab-workspace">
+        <LabRunbook
+          domainProgress={`${domainAssessments.filter((domain) => domain.status === "complete").length} of ${domainAssessments.length} domains checked`}
+          activeStage={workflowStage}
+          onOpenLibrary={() => setSidebarView("catalog")}
+          onSelectStage={handleRunbookStage}
+        />
+        <aside className="catalog-panel catalog-drawer" hidden={sidebarView !== "catalog"} aria-label="Component library">
           <div className="panel-title">
-            <Boxes size={18} />
-            <span>Catalog</span>
+            <span className="catalog-title-copy">
+              <Boxes size={18} />
+              Component library
+            </span>
+            <button className="catalog-close" type="button" onClick={() => setSidebarView("runbook")}>
+              Back to runbook
+            </button>
           </div>
           <label className="search-box">
             <Search size={16} />
-            <input value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="Search" />
+            <input
+              value={catalogQuery}
+              onChange={(event) => setCatalogQuery(event.target.value)}
+              placeholder="Search"
+              aria-label="Search component library"
+            />
           </label>
 
           <section className="build-guide" aria-label="Build guide">
@@ -4277,8 +4535,10 @@ function App() {
           </div>
         </aside>
 
-        <section className="canvas-panel">
-          <ReactFlow
+        <section className="lab-canvas-stage">
+          <DomainStrip domains={domainViews} activeDomain={activeDomain} onChange={handleDomainChange} />
+          <section className="canvas-panel">
+            <ReactFlow
             nodes={visibleNodes}
             edges={visibleEdges}
             nodeTypes={nodeTypes}
@@ -4350,7 +4610,7 @@ function App() {
               <span>{edges.length} links</span>
             </Panel>
             <Panel position="top-right" className="workspace-panel">
-              <button type="button" title="Create new empty space (Ctrl+N)" aria-keyshortcuts="Control+N" onClick={handleNewSpace}>
+              <button type="button" title="Start a new mission workspace (Ctrl+N)" aria-keyshortcuts="Control+N" onClick={handleNewSpace}>
                 <FilePlus size={15} />
                 <span>New</span>
               </button>
@@ -4367,7 +4627,7 @@ function App() {
                 type="button"
                 title="Save current space as .saq (Ctrl+Shift+S)"
                 aria-keyshortcuts="Control+Shift+S"
-                onClick={() => void handleSaveWorkspaceFile()}
+                onClick={() => void handleSave()}
               >
                 <Save size={15} />
                 <span>Save .saq</span>
@@ -4384,7 +4644,7 @@ function App() {
                 onChange={handleWorkspaceFileSelected}
               />
             </Panel>
-          </ReactFlow>
+            </ReactFlow>
 
           {hoveredEdgeDetails && hoveredTooltipPosition ? (
             <div className="connection-tooltip" style={{ left: hoveredTooltipPosition.x, top: hoveredTooltipPosition.y }}>
@@ -4449,10 +4709,31 @@ function App() {
               ) : null}
             </div>
           ) : null}
+          </section>
         </section>
 
         <aside className="detail-panel">
-          <div className="tabbar">
+          {rightPanelMode === "domain" ? (
+            <DomainReviewPanel
+              domain={activeDomainView}
+              onShowAffected={handleShowAffectedDomainCheck}
+              onRunCheck={handleRunDomainCheck}
+              onOpenTools={() => setRightPanelMode("tools")}
+            />
+          ) : (
+            <>
+          <div className="lab-tools-header">
+            <button type="button" onClick={() => setRightPanelMode("domain")}>
+              <ShieldCheck size={16} />
+              {activeDomainView.shortLabel ?? activeDomainView.label} check
+            </button>
+            <div>
+              <button type="button" title="Export JSON" onClick={() => void handleJsonDownload()}><FileJson size={15} /></button>
+              <button type="button" title="Export ArduPilot parameters" onClick={handleParamsDownload}><Download size={15} /></button>
+              <button type="button" title="Check for software updates" onClick={handleSoftwareUpdate} disabled={softwareUpdating}><RefreshCw size={15} /></button>
+            </div>
+          </div>
+          <div className="tabbar" role="tablist" aria-label="Workspace tools">
             <button className={tab === "inspector" ? "active" : ""} type="button" onClick={() => setTab("inspector")}>
               <Settings size={16} />
               <span>Inspect</span>
@@ -4717,7 +4998,9 @@ function App() {
               <div className="panel-title">
                 <span>Simulation</span>
                 <span className={`status-pill ${systemStatus?.sitl.available ? "good" : "neutral"}`}>
-                  {systemStatus?.sitl.available ? "SITL found" : "SITL not found"}
+                  {systemStatus?.sitl.available
+                    ? `SITL · ${systemStatus.sitl.source === "wsl" ? `WSL ${systemStatus.sitl.distro ?? ""}` : systemStatus.sitl.source ?? "found"}`
+                    : "SITL not found"}
                 </span>
               </div>
 
@@ -4725,7 +5008,7 @@ function App() {
 
               <label className="field">
                 <span>Vehicle</span>
-                <select value={settings.vehicle} onChange={(event) => setSettings({ ...settings, vehicle: event.target.value as SimulationSettings["vehicle"] })}>
+                <select value={settings.vehicle} onChange={(event) => updateVehicleSetting(event.target.value as SimulationSettings["vehicle"])}>
                   <option value="ArduCopter">ArduCopter</option>
                   <option value="ArduPlane">ArduPlane</option>
                   <option value="Rover">Rover</option>
@@ -4735,7 +5018,7 @@ function App() {
               <label className="field">
                 <span>Frame</span>
                 <select value={settings.frame} onChange={(event) => updateFrameSetting(event.target.value)}>
-                  {airframeOptions.map((option) => (
+                  {airframesForVehicle(settings.vehicle).map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -4769,11 +5052,17 @@ function App() {
                     onChange={(event) => setSettings({ ...settings, simVehiclePath: event.target.value })}
                     placeholder="File path or ArduPilot checkout folder"
                   />
-                  <button type="button" title="Check path" onClick={handleLocateSimVehicle}>
+                  <button type="button" title="Search Windows, Cygwin, and WSL" aria-label="Search for sim_vehicle.py" onClick={() => void handleLocateSimVehicle()} disabled={sitlAction !== null}>
                     <Search size={16} />
                   </button>
                 </div>
-                <p>{systemStatus?.sitl.path ?? systemStatus?.sitl.notes[0] ?? "Enter a path or use ARDUPILOT_HOME/PATH detection."}</p>
+                <p>{systemStatus?.sitl.displayPath ?? systemStatus?.sitl.notes[0] ?? "Automatic search checks native paths, Cygwin, and WSL."}</p>
+                {!systemStatus?.sitl.available ? (
+                  <button className="guide-action" type="button" onClick={() => setManualSimLocationOpen(true)}>
+                    <FolderOpen size={15} />
+                    <span>Locate sim_vehicle.py</span>
+                  </button>
+                ) : null}
               </section>
 
               <section className="setup-diagnostics">
@@ -5017,7 +5306,7 @@ function App() {
                   </button>
                   <button type="button" onClick={handleMissionImportClick}>
                     <FolderOpen size={16} />
-                    <span>Import</span>
+                    <span>Import route</span>
                   </button>
                   <button type="button" onClick={() => void handleArtifactDownload(buildPrearmFile, "Pre-arm scenario exported")}>
                     <ShieldCheck size={16} />
@@ -5057,7 +5346,7 @@ function App() {
                 </div>
                 {gazeboStatus?.notes[0] ? <p className="scenario-note">{gazeboStatus.notes[0]}</p> : null}
                 <div className="action-grid gazebo-actions">
-                  <button type="button" onClick={refreshGazeboStatus}>
+                  <button type="button" onClick={() => void handleRefreshGazeboStatus()}>
                     <RefreshCw size={16} />
                     <span>Check</span>
                   </button>
@@ -5102,13 +5391,18 @@ function App() {
               </section>
 
               <div className="action-grid">
-                <button type="button" onClick={handlePlan}>
+                <button type="button" onClick={() => void handlePlan()} disabled={sitlAction !== null}>
                   <GitBranch size={16} />
-                  <span>Plan</span>
+                  <span>{sitlAction === "planning" ? "Planning" : "Plan"}</span>
                 </button>
-                <button type="button" onClick={handleLaunch} disabled={!systemStatus?.sitl.available || validation.counts.error > 0}>
+                <button
+                  type="button"
+                  onClick={() => void handleLaunch()}
+                  disabled={validation.counts.error > 0 || sitlAction !== null}
+                  title={validation.counts.error > 0 ? "Resolve validation errors before building firmware" : "Build ArduPilot firmware with sim_vehicle.py and start SITL"}
+                >
                   <Play size={16} />
-                  <span>Launch</span>
+                  <span>{sitlAction === "launching" ? "Starting build" : "Build & Launch"}</span>
                 </button>
               </div>
 
@@ -5126,8 +5420,10 @@ function App() {
 
           {tab === "mission" && (
             <MissionPanel
+              settings={settings}
               telemetry={telemetryStatus}
               mission={missionStatus}
+              importedMissionReady={Boolean(importedMissionText)}
               onUpload={(vehicle) => void handleMissionUpload(vehicle)}
               onDownload={(vehicle) => void handleMissionDownload(vehicle)}
               onSaveDownloaded={handleSaveDownloadedMission}
@@ -5145,7 +5441,7 @@ function App() {
             />
           )}
 
-          {tab === "logs" && <LogsPanel logs={logs} onRefresh={refreshLogs} onClear={() => void handleClearLogs()} />}
+          {tab === "logs" && <LogsPanel logs={logs} onRefresh={() => void handleRefreshLogs()} onClear={() => void handleClearLogs()} />}
 
           {tab === "terminal" && (
             <TerminalPanel
@@ -5178,8 +5474,75 @@ function App() {
               onLoadClick={handleComparisonLoadClick}
             />
           )}
+            </>
+          )}
         </aside>
       </main>
+
+      {newMissionWizard ? (
+        <NewMissionWizard
+          initialStep={newMissionWizard.initialStep}
+          onCancel={() => {
+            setNewMissionWizard(null);
+            setWorkflowStage("integrate");
+            setStatusMessage("New mission setup cancelled; the existing workspace was preserved");
+          }}
+          onCreate={handleCreateMission}
+          onStepChange={(step) => setWorkflowStage(step === 0 ? "define" : step === 1 ? "airframe" : "systems")}
+        />
+      ) : null}
+
+      <dialog
+        ref={manualLocationDialogRef}
+        className="sim-location-dialog"
+        aria-labelledby="sim-location-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          setManualSimLocationOpen(false);
+        }}
+      >
+        <form
+          method="dialog"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleLocateSimVehicle();
+          }}
+        >
+          <header>
+            <div>
+              <small>SITL setup</small>
+              <h2 id="sim-location-title">Locate sim_vehicle.py</h2>
+            </div>
+            <button type="button" className="mission-wizard-close" onClick={() => setManualSimLocationOpen(false)} aria-label="Close location request">
+              <X size={20} />
+            </button>
+          </header>
+          <p>Automatic search checked Windows, Cygwin, and WSL. Paste the exact file path or the root of an ArduPilot checkout.</p>
+          <label className="mission-field">
+            <span>Location</span>
+            <input
+              autoFocus
+              value={settings.simVehiclePath}
+              onChange={(event) => setSettings((current) => ({ ...current, simVehiclePath: event.target.value }))}
+              placeholder="C:\\ardupilot or wsl://Ubuntu/home/user/ardupilot"
+            />
+          </label>
+          <div className="sim-location-examples">
+            <code>C:\ardupilot</code>
+            <code>wsl://Ubuntu/home/user/ardupilot</code>
+            <code>cygwin:/home/user/ardupilot</code>
+          </div>
+          <footer>
+            <button type="button" className="wizard-cancel" onClick={() => setManualSimLocationOpen(false)}>Not now</button>
+            <button type="button" className="wizard-back" onClick={() => void handleLocateSimVehicle("")} disabled={sitlAction !== null}>
+              <Search size={16} />Search again
+            </button>
+            <button type="submit" className="wizard-primary" disabled={!settings.simVehiclePath.trim() || sitlAction !== null}>
+              <Check size={16} />{sitlAction === "locating" ? "Checking" : "Use location"}
+            </button>
+          </footer>
+        </form>
+      </dialog>
 
       <input
         ref={comparisonFileInputRef}
@@ -5189,7 +5552,17 @@ function App() {
         onChange={handleComparisonFileSelected}
       />
 
-      <footer className="statusbar">
+      <LabEvidence
+        domainLabel={activeDomainView.label}
+        designSaved={workspaceSaved}
+        validationReady={validation.counts.error === 0 && domainSummary.completed === domainSummary.total}
+        simulationRan={Boolean(scenarioRunResult)}
+        onSave={() => void handleSaveAndMark()}
+        onOpenValidation={() => openToolPanel("validation")}
+        onOpenSimulation={() => openToolPanel("simulation")}
+      />
+
+      <footer className="statusbar" role="status" aria-live="polite">
         <span>{statusMessage}</span>
         <span>{systemStatus?.sitl.notes[0] ?? "SITL detection pending"}</span>
       </footer>
