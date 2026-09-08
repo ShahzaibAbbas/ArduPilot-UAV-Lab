@@ -1,0 +1,439 @@
+{
+  "format": "ardupilot-uav-lab-source-package",
+  "version": 1,
+  "releaseVersion": "v0.1.0-enhanced-20260908",
+  "applicationVersion": "0.1.0",
+  "createdAt": "2026-09-08T15:26:55.390Z",
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 517,
+      "sha256": "153b81fcdc498cddbfd02932d184c74c517a629433e1df3bf8b8c812c5d7d251"
+    },
+    {
+      "path": ".github/workflows/deno.yml",
+      "bytes": 524,
+      "sha256": "f73a644544c0fc0cd3e65497872494227c58e62b15315c8512ab8d76988e3ff4"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 227,
+      "sha256": "9b8ac81d398c4eccd09dc5d5419cd6fc7192177f2065f5d030a59438e9d88202"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 3093,
+      "sha256": "f949d3848c8534e1a9346fa5e53578effb1913948f9d24a39e232cb98e9adb5f"
+    },
+    {
+      "path": "docs/3D_LAB_ARCHITECTURE.md",
+      "bytes": 3625,
+      "sha256": "5d53b3c19b5320424ff9b285e74962aff72982ae2bec6927a0e2679039d8e4c7"
+    },
+    {
+      "path": "docs/FIRMWARE_LAB.md",
+      "bytes": 3760,
+      "sha256": "199c49f314c9ac2524bc17631136fffe47a8b6ac0c6dbd274dac95e7375afa97"
+    },
+    {
+      "path": "docs/MAVLINK_TRACE.md",
+      "bytes": 4130,
+      "sha256": "01fb84224e4f01664ad81636fc0bac73d488a141a0b34779ce51fbaf03ce55f3"
+    },
+    {
+      "path": "docs/PHASE_1_UPGRADE.md",
+      "bytes": 3094,
+      "sha256": "6de3f4be04467f9dad63a86626f08a7d910fdc496e1da555f1241f600a7302fd"
+    },
+    {
+      "path": "index.html",
+      "bytes": 316,
+      "sha256": "bd7ee55ac9a59dc2d4e2c2d73b0590c04ae3011ed77cb77f03f0d73efe824a03"
+    },
+    {
+      "path": "Launch-macOS.command",
+      "bytes": 3900,
+      "sha256": "3ad7d37c9e73ae19a5177be2cbc179c1e68802e4bc5ae310a391427b3c0c76f2"
+    },
+    {
+      "path": "Launch-Ubuntu.sh",
+      "bytes": 1902,
+      "sha256": "32c8a5cd82e54c47d1949037db3cf36daf05b3713465d3fdbe76bacd8fe90a35"
+    },
+    {
+      "path": "Launch-Windows.bat",
+      "bytes": 206,
+      "sha256": "ae5625d7dd49f0f0c613e7634a2f0e2dda752d1060532bf210b6002c8fc94ba0"
+    },
+    {
+      "path": "Launch-Windows.ps1",
+      "bytes": 5164,
+      "sha256": "fcc4757f12bba536931b38b83570e24406735594c79894cef5ba1837b9d01e86"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 147332,
+      "sha256": "b3b4f3f8807d8a9a6c427c7ca2d33dc0df53fffed3aff0d96ecd24882679fe42"
+    },
+    {
+      "path": "package.json",
+      "bytes": 1738,
+      "sha256": "befb780caceb3fe5b0db6c930b612d28ebcce53fd476df2599acbaf2033249f6"
+    },
+    {
+      "path": "public/uas-doctoral-tech-logo.png",
+      "bytes": 1363750,
+      "sha256": "7cc8a236849e4801715df9cc35316925f1cc1b0d9933eaee449a32f74c68e225"
+    },
+    {
+      "path": "public/uas-doctoral-tech-logo.svg",
+      "bytes": 1518,
+      "sha256": "b2d499a034e690ee15c072732ff86650271b669cba0755e70e986f407fc7058f"
+    },
+    {
+      "path": "README.md",
+      "bytes": 11187,
+      "sha256": "4a547437f84c20b8429c5d8615bbb22cce6552f0230c4ff564a28238e2ed566e"
+    },
+    {
+      "path": "scripts/launch-design-browser.mjs",
+      "bytes": 10443,
+      "sha256": "24b40640d6878d422748d03e319e188de723e50cdd3bd572c24e32dfb55e64e2"
+    },
+    {
+      "path": "scripts/phase1-smoke.mjs",
+      "bytes": 9515,
+      "sha256": "416ff7082fb4704cc03296bf5c37e1b124933eda89a5d21c5a1143afa2065f12"
+    },
+    {
+      "path": "scripts/prepare-github-upload.mjs",
+      "bytes": 1215,
+      "sha256": "8ad8f7ca64452c9c18b0377e0314461af62249135fe7097a15a7de949c38faa5"
+    },
+    {
+      "path": "scripts/source-package.mjs",
+      "bytes": 5397,
+      "sha256": "3ed01229c48d5d966f9875e0ea065bdf0c1b75ca8d47faa9cd1e9cb0f616628c"
+    },
+    {
+      "path": "scripts/source-package.test.mjs",
+      "bytes": 3867,
+      "sha256": "13524a5a03da8488596c8c2308a8c20257728f9f239ab4bf7f9029c3fc101df9"
+    },
+    {
+      "path": "scripts/three-workspace.test.mjs",
+      "bytes": 6913,
+      "sha256": "f0beccca6f65ede8054e5574041ef368287222c0193262b32eb6021f9a255441"
+    },
+    {
+      "path": "server/airframes.js",
+      "bytes": 3186,
+      "sha256": "5eb0da5e1b0436dc6a74e0c6fd20a3ec490c2e0fa4c327c68e2b25dbdfdfad13"
+    },
+    {
+      "path": "server/artifacts.js",
+      "bytes": 27625,
+      "sha256": "38cc7f218383a319d08587ebd5ebab4c6cee87a672865c47d89fe3a18d8639dc"
+    },
+    {
+      "path": "server/customComponents.js",
+      "bytes": 2078,
+      "sha256": "f159de24e0128e3020f98e7745bd3d0a6579733e49b3430322151cc26597cc5c"
+    },
+    {
+      "path": "server/designStore.js",
+      "bytes": 2538,
+      "sha256": "d2bd7a9081ce2fe40f30c9c62446aebbba24becd6bd019d5e77405d2a74243b8"
+    },
+    {
+      "path": "server/designStore.test.js",
+      "bytes": 2726,
+      "sha256": "7ff0a1e0f2e0f902fd0a5fa6e23fb9343d0d50102bd32878cbaff4711ac0402c"
+    },
+    {
+      "path": "server/firmware.js",
+      "bytes": 21880,
+      "sha256": "4b0f8dcb8644f81b97fe6437b58f7ae79ee596c5470614b07098efa408f198b4"
+    },
+    {
+      "path": "server/firmware.test.js",
+      "bytes": 13344,
+      "sha256": "2181bb736bc7154211f18e63f9f8ef60106c1a1db6d1391a5aa989fc95fd23b3"
+    },
+    {
+      "path": "server/gazebo.js",
+      "bytes": 6232,
+      "sha256": "013670ce1dc2a0ef4d714e5902b04b553dfb5a58b5cd0ba59530e57a104efeee"
+    },
+    {
+      "path": "server/index.js",
+      "bytes": 26617,
+      "sha256": "977bac4280e3813f3f5a5487ab70f5585ef12c2a1d567ac8e1237596bca35e3b"
+    },
+    {
+      "path": "server/localOrigin.js",
+      "bytes": 508,
+      "sha256": "c43ca73904c0936d6c598d2b1af4cfaf39fc84d14f32d6e23c4a093de1a866bd"
+    },
+    {
+      "path": "server/localOrigin.test.js",
+      "bytes": 914,
+      "sha256": "c4c80bf9d6771ef23925fbee78452b210d5a1f6a4dd1d10ae068e6f0e5506788"
+    },
+    {
+      "path": "server/logger.js",
+      "bytes": 2362,
+      "sha256": "205fdf7cf73cc746083b01eeb44dcdd0dceee2110ffbe6cb3de0d4b940e72c4d"
+    },
+    {
+      "path": "server/setup.js",
+      "bytes": 5221,
+      "sha256": "015cc121371acf9b510ed5afb8af2490df81a62942d86a250192caca5951b9fa"
+    },
+    {
+      "path": "server/sitl.js",
+      "bytes": 30321,
+      "sha256": "cbee264345081fa41396571151af22c4cf92ce0efc4456b6bc1d5e6089a7d96e"
+    },
+    {
+      "path": "server/sitl.test.js",
+      "bytes": 1639,
+      "sha256": "30f56b42d2c48b034723eda454bedf9490e4db01d5475e8f8ef72e54305baaf3"
+    },
+    {
+      "path": "server/telemetry.js",
+      "bytes": 34086,
+      "sha256": "09fbfdda88cb4a22c46b92258119fe83b8ec88aeda3c4418b1d6f6207f6640bc"
+    },
+    {
+      "path": "server/terminal.js",
+      "bytes": 2265,
+      "sha256": "23f7fefa01642af7d9c68f94a51ea3e287ce90abafbb4cf5a08007df2715ea2e"
+    },
+    {
+      "path": "server/trace.js",
+      "bytes": 9070,
+      "sha256": "da3ea86d4341eb6f6e1a5c66a345b6ac9daeb9e636de8d41eed4d0f2f754b691"
+    },
+    {
+      "path": "server/trace.test.js",
+      "bytes": 12299,
+      "sha256": "53b1aa5a57ab406814c778becb20f3a805f6edaeacc960dbea09f08387a74311"
+    },
+    {
+      "path": "server/zip.js",
+      "bytes": 3105,
+      "sha256": "7a58281161491c4877dd5998807492e45d06a3d7ba19fe65585d364a1a9b6ddc"
+    },
+    {
+      "path": "src/App.tsx",
+      "bytes": 222863,
+      "sha256": "29191801cb6caa979276be8d9ff3b25196bd58acb655782e84aa9ed9d70fcd3c"
+    },
+    {
+      "path": "src/components/firmware/FirmwareDropzone.tsx",
+      "bytes": 2567,
+      "sha256": "3221ea1598822d646f9de46540f28bb2490de68f6be6c8297fda3902aeea71e5"
+    },
+    {
+      "path": "src/components/firmware/FirmwareLab.tsx",
+      "bytes": 13549,
+      "sha256": "58e84d61ac356e1072fadde3c27d059bf3c5d07ead9ec5115c08d0ecc7cab37f"
+    },
+    {
+      "path": "src/components/firmware/FirmwareMetadataPanel.tsx",
+      "bytes": 2042,
+      "sha256": "33937155f7900d67fa4764b1aae54bbdb1b5a4cd8fe39dac32f95091b8fc07d4"
+    },
+    {
+      "path": "src/components/firmware/FirmwareStateTimeline.tsx",
+      "bytes": 1523,
+      "sha256": "78ec4553aece565ca5eaf4e45e35dfddcd4df550949137a810b50a0e8f9fc811"
+    },
+    {
+      "path": "src/components/firmware/firmwareTypes.ts",
+      "bytes": 281,
+      "sha256": "9ccf660a81e621e36b9c1bef409f01d39ea545f4c25b69e5ecdbd81e7e492b12"
+    },
+    {
+      "path": "src/components/LabWorkspaceChrome.tsx",
+      "bytes": 12251,
+      "sha256": "1616b7092c806d15dfc65f3a613ba890683c62d82038755990f58e4094bdc1fe"
+    },
+    {
+      "path": "src/components/NewMissionWizard.tsx",
+      "bytes": 12452,
+      "sha256": "2fdb7978e6275eb43a7d3a4c8b1216a2dced4d2ced4d20d7834416fd19e34767"
+    },
+    {
+      "path": "src/components/three/ComponentMesh.tsx",
+      "bytes": 4222,
+      "sha256": "c007e0de78ebcbb6d3084f9382d7e059c00d701a000c26d4a255ad3c568236be"
+    },
+    {
+      "path": "src/components/three/ConnectionPath.tsx",
+      "bytes": 940,
+      "sha256": "533e69ec22fd3e7602289bc3dc082873393ca84040320a642e31bac54705cef0"
+    },
+    {
+      "path": "src/components/three/SceneInspector.tsx",
+      "bytes": 4395,
+      "sha256": "eb1762fae35d14afc63e7881778e7d70166c931ce9c356ae0c227c516170fb9e"
+    },
+    {
+      "path": "src/components/three/sceneLayout.ts",
+      "bytes": 1853,
+      "sha256": "612dc96b924af0acf84fed16facdcbd258a174d16d7871f997ba002b41afab48"
+    },
+    {
+      "path": "src/components/three/SceneToolbar.tsx",
+      "bytes": 2126,
+      "sha256": "ebea32cbbac8f653be52146a572b6537ca049f478c4bc7a4c2b0deda481eddd5"
+    },
+    {
+      "path": "src/components/three/sceneTypes.ts",
+      "bytes": 256,
+      "sha256": "8d8d080bece98d9203c9adf1eb2591b1e9cf2d4006d7ebbe228d89538bb30bb7"
+    },
+    {
+      "path": "src/components/three/ThreeCanvasBoundary.tsx",
+      "bytes": 1425,
+      "sha256": "69b95a2ac05f63b6696efb2d1079b5a0c00e79b56d30defb8547aae6165ef2d1"
+    },
+    {
+      "path": "src/components/three/ThreeLabWorkspace.tsx",
+      "bytes": 6574,
+      "sha256": "0e4253c7f70ab1be6c076b3bafca813cd567e043c1349bcdc40c3fa896722fc3"
+    },
+    {
+      "path": "src/components/three/ThreeScene.tsx",
+      "bytes": 3867,
+      "sha256": "99a52b69546a8af3f38bdb072405bcb5bb0e043e9e56826d8194f521d174e825"
+    },
+    {
+      "path": "src/components/trace/PacketDetails.tsx",
+      "bytes": 2544,
+      "sha256": "295f5cf3d0bbc1dfb245401954f008e96515eabc5c1c0165fcbc9ff43ec00bc4"
+    },
+    {
+      "path": "src/components/trace/PacketTracePanel.tsx",
+      "bytes": 10808,
+      "sha256": "ea5abc848f4141be969cf2fe0f538ffa5f8cf3201a5570e66e9104559b73aa7a"
+    },
+    {
+      "path": "src/components/trace/PacketTraceTable.tsx",
+      "bytes": 2367,
+      "sha256": "40e39d11f995e49026738146e6d6dd8cf3a5468d32922111e7da00d729f8b347"
+    },
+    {
+      "path": "src/components/trace/TraceTimeline.tsx",
+      "bytes": 832,
+      "sha256": "a0d3aa49f0fa8b80325d556804d94946911e76a64736efc8fd097d616e349c78"
+    },
+    {
+      "path": "src/components/trace/traceTypes.ts",
+      "bytes": 103,
+      "sha256": "5c1622fd28a1fbe0deb862d8dddecc00f9d7965e2b8cb2fcfc419a199ddff93a"
+    },
+    {
+      "path": "src/components/WorkspaceActions.tsx",
+      "bytes": 1170,
+      "sha256": "91f0253b07b21db0bc6b6472487fd02a8467cf393dca1fb550a31f6954f5b8e5"
+    },
+    {
+      "path": "src/domain/airframes.ts",
+      "bytes": 5802,
+      "sha256": "62bfcf2dea43d97937f82b8551582165517b074dab6edf21c1449019ed90cb8e"
+    },
+    {
+      "path": "src/domain/componentCatalog.ts",
+      "bytes": 20843,
+      "sha256": "8ea74abec08c695c6ce2e9cfb7a146e2f49833f74b6e6aba98289d7e83fbd9fe"
+    },
+    {
+      "path": "src/domain/design.ts",
+      "bytes": 6665,
+      "sha256": "9fb6b89f36f6fd24a5dcf2d3c2f30082dac6493b8d263e4dd7ea84cf137e0e56"
+    },
+    {
+      "path": "src/domain/engineeringDomains.ts",
+      "bytes": 31142,
+      "sha256": "394e5f4aaced04acc444b21b56059de4b79d1fd22d06bc3f26c34e1f51eb4258"
+    },
+    {
+      "path": "src/domain/management.ts",
+      "bytes": 17860,
+      "sha256": "c02f718b07f4d625fc77998ee65fdeef64203b3f52be3db27ad7df99b2b011e7"
+    },
+    {
+      "path": "src/domain/missionTemplates.ts",
+      "bytes": 12213,
+      "sha256": "277ca22a4c36150d6d38c1e087ea9d94349485f14ac5978ee40291277a8bba78"
+    },
+    {
+      "path": "src/domain/productTemplates.ts",
+      "bytes": 4943,
+      "sha256": "8af1b4a1669c65e5a4d7ef4c6a826b7f48e157ade83084c22bb83705fe1829f7"
+    },
+    {
+      "path": "src/domain/starterDesign.ts",
+      "bytes": 4055,
+      "sha256": "07e3b33c79cd7ce8926e758361109ab339c00d6fd3dc75b2f86ea690df9970e2"
+    },
+    {
+      "path": "src/domain/threePresentation.ts",
+      "bytes": 2022,
+      "sha256": "93532d3847896caaec5fc3e7293e68a53477898327007db936ff7b659fb5e662"
+    },
+    {
+      "path": "src/domain/validators.ts",
+      "bytes": 18833,
+      "sha256": "ce1febb0947cc69d4bd8f9e77b2ec99c155e5750c616821734b0d6b511903994"
+    },
+    {
+      "path": "src/domain/workspaceMigration.ts",
+      "bytes": 1731,
+      "sha256": "d5506c76347846213dceeb2c802c8680cd505ae9834ebb3220bc9992bd8cd8cc"
+    },
+    {
+      "path": "src/lib/api.ts",
+      "bytes": 20775,
+      "sha256": "d9f00e6cf77e657fa8825674de486d79457eb3ca2f1659c96456c0d4c100180f"
+    },
+    {
+      "path": "src/lib/three/geometryFactory.ts",
+      "bytes": 963,
+      "sha256": "c86c600708464581d03d2f441897b02fd40afcbe9ebbf71cb6bbe50c6de5eb5f"
+    },
+    {
+      "path": "src/lib/three/signalStyles.ts",
+      "bytes": 567,
+      "sha256": "4c782cf6577574a00b8eb7c8b8f5cb07f0f6938b4236d295cd11c07e9c41393a"
+    },
+    {
+      "path": "src/main.tsx",
+      "bytes": 494,
+      "sha256": "7487724c391bb3050281f492f25320ca43d479ebe4abe2f644ff7609b86c687d"
+    },
+    {
+      "path": "src/styles.css",
+      "bytes": 97087,
+      "sha256": "2b69d9304205bc549de5d539f8e2780e4c61167739de1ad314922ba09e6e82b2"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 566,
+      "sha256": "24160e0a067ff82b6208b7fcf64f927c273b0c4f74e6b62e9ac219af5c0e35b4"
+    },
+    {
+      "path": "UPLOAD_RULES.md",
+      "bytes": 2689,
+      "sha256": "cb3d7291c10a6e9e211e0cc5ab8fb39881bb34a6ccaf41733e1952a5be596c92"
+    },
+    {
+      "path": "vite.config.ts",
+      "bytes": 1143,
+      "sha256": "a4b19e527307b5af8b49f77b72827509f983bd2ef3785b5d187b93a496f48a35"
+    }
+  ]
+}

@@ -7,6 +7,16 @@ Updates/
 .codex/
 coverage/
 .env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.zip
+*.codex-kit-backup-*
+test-results/
+playwright-report/
+*.tsbuildinfo
 *.log
 .DS_Store
 Thumbs.db

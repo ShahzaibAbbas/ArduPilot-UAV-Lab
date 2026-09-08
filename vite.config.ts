@@ -10,6 +10,17 @@ export default defineConfig({
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("@xyflow")) return "flow-vendor";
           if (id.includes("lucide-react")) return "icons-vendor";
+          if (
+            id.includes("@react-three") ||
+            id.includes("/three/") ||
+            id.includes("\\three\\") ||
+            id.includes("three-stdlib") ||
+            id.includes("troika-three") ||
+            id.includes("meshline") ||
+            id.includes("maath")
+          ) {
+            return "three-vendor";
+          }
           if (id.includes("react") || id.includes("scheduler")) return "react-vendor";
           return "vendor";
         }
