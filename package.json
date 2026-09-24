@@ -4,19 +4,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "app": "concurrently -k --success first \"npm:dev:server\" \"npm:dev:client\" \"npm:own:browser\"",
-    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "app": "node scripts/launch-app.mjs",
+    "dev": "node scripts/launch-app.mjs --no-browser",
     "dev:client": "vite --host 127.0.0.1",
     "dev:server": "node --watch server/index.js",
     "own:browser": "node scripts/launch-design-browser.mjs",
     "own:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
     "design:browser": "node scripts/launch-design-browser.mjs",
     "design:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
-    "test": "node --test server/localOrigin.test.js server/designStore.test.js server/sitl.test.js server/firmware.test.js server/trace.test.js scripts/three-workspace.test.mjs scripts/source-package.test.mjs",
+    "test": "node --test server/localOrigin.test.js server/designStore.test.js server/sitl.test.js server/sitlConnection.test.js server/gazebo.test.js server/runtime.test.js server/setup.test.js server/firmware.test.js server/trace.test.js server/gcsBridge.test.js server/companionVm.test.js scripts/three-workspace.test.mjs scripts/source-package.test.mjs server/airframes.test.js server/wslSession.test.js scripts/validation.test.mjs scripts/engineering-acceptance.test.mjs scripts/auto-wire.test.mjs scripts/sitl-maintenance.test.mjs",
     "test:smoke": "node scripts/phase1-smoke.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "github:upload": "node scripts/prepare-github-upload.mjs"
+    "github:upload": "node scripts/prepare-github-upload.mjs",
+    "test:sitl": "node scripts/sitl-integration.mjs --run",
+    "test:airframes": "node scripts/airframes-smoke.mjs",
+    "test:validation": "node scripts/validation-smoke.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

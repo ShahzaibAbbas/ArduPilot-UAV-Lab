@@ -1,5 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { runtimePorts } from "./server/runtimeConfig.js";
+
+const { apiUrl, clientPort } = runtimePorts();
 
 export default defineConfig({
   plugins: [react()],
@@ -28,13 +31,13 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5173,
+    port: clientPort,
     strictPort: true,
     watch: {
       ignored: ["**/backups/**", "**/github uploading/**", "**/Updates/**", "**/data/**"]
     },
     proxy: {
-      "/api": "http://127.0.0.1:4310"
+      "/api": apiUrl
     }
   }
 });

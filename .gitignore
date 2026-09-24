@@ -18,5 +18,8 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 *.log
+dist-build-check/
+dist-build-check-2/
+zip_ArduPilot_UAV_Lab_for_GitHub.bat
 .DS_Store
 Thumbs.db

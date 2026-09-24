@@ -103,39 +103,16 @@ function Install-ProjectDependencies {
   }
 }
 
-function Stop-ExistingAppServers {
-  $ports = @(4310, 5173)
-  $stopped = @()
-
-  Write-Step "Closing existing ArduPilot UAV Lab servers"
-
-  foreach ($port in $ports) {
+function Assert-AppPortsAvailable {
+  $runtimePorts = (& node --input-type=module -e "import { runtimePorts } from './server/runtimeConfig.js'; console.log(JSON.stringify(runtimePorts()));") | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0) { throw "Invalid PORT or CLIENT_PORT setting. Check the configuration and retry." }
+  Write-Step "Checking configured application ports"
+  foreach ($port in @($runtimePorts.apiPort, $runtimePorts.clientPort)) {
     $listeners = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
-    foreach ($listener in $listeners) {
-      $processId = [int]$listener.OwningProcess
-      if ($processId -le 0 -or $processId -eq $PID) {
-        continue
-      }
-
-      try {
-        $process = Get-Process -Id $processId -ErrorAction Stop
-        Stop-Process -Id $processId -Force -ErrorAction Stop
-        $stopped += "port $port / PID $processId / $($process.ProcessName)"
-      } catch {
-        Write-Warning "Could not stop process on port $port (PID $processId): $($_.Exception.Message)"
-      }
+    if ($listeners.Count -gt 0) {
+      throw "TCP port $port is already occupied. Exit the existing lab through Ports & setup, close the owning application, or choose another PORT/CLIENT_PORT. No existing process was terminated."
     }
   }
-
-  if ($stopped.Count -eq 0) {
-    Write-Host "No existing app server ports were in use."
-    return
-  }
-
-  foreach ($entry in $stopped) {
-    Write-Host "Stopped $entry"
-  }
-  Start-Sleep -Seconds 1
 }
 
 Push-Location $ProjectRoot
@@ -151,7 +128,7 @@ try {
   }
 
   Write-Step "Starting ArduPilot UAV Lab"
-  Stop-ExistingAppServers
+  Assert-AppPortsAvailable
   if ($SkipBrowser) {
     Write-Host "Open http://127.0.0.1:5173 after the server starts."
   } else {

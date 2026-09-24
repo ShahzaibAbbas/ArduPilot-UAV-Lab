@@ -1,9 +1,9 @@
 {
   "format": "ardupilot-uav-lab-source-package",
   "version": 1,
-  "releaseVersion": "v0.1.0-enhanced-20260908",
+  "releaseVersion": "v0.1.1-windows-connections",
   "applicationVersion": "0.1.0",
-  "createdAt": "2026-09-08T15:26:55.390Z",
+  "createdAt": "2026-09-24T18:40:47.796Z",
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -17,8 +17,8 @@
     },
     {
       "path": ".gitignore",
-      "bytes": 227,
-      "sha256": "9b8ac81d398c4eccd09dc5d5419cd6fc7192177f2065f5d030a59438e9d88202"
+      "bytes": 308,
+      "sha256": "0bde4b49a8aa628692bfb16b4d7a832672143227697deb9839f2c96cc938fd13"
     },
     {
       "path": "AGENTS.md",
@@ -29,6 +29,11 @@
       "path": "docs/3D_LAB_ARCHITECTURE.md",
       "bytes": 3625,
       "sha256": "5d53b3c19b5320424ff9b285e74962aff72982ae2bec6927a0e2679039d8e4c7"
+    },
+    {
+      "path": "docs/AIRFRAME_VARIANTS.md",
+      "bytes": 2682,
+      "sha256": "b7b448f19fa642efd7a62d5e6bd1dd5f1244a7f49fde753b5f1a72336a03c1ec"
     },
     {
       "path": "docs/FIRMWARE_LAB.md",
@@ -42,8 +47,18 @@
     },
     {
       "path": "docs/PHASE_1_UPGRADE.md",
-      "bytes": 3094,
-      "sha256": "6de3f4be04467f9dad63a86626f08a7d910fdc496e1da555f1241f600a7302fd"
+      "bytes": 3921,
+      "sha256": "9aa1b1bfb838ae8eb59a16c903bb07314656ce52298ecfcf0a5eb86228bf6c23"
+    },
+    {
+      "path": "docs/WINDOWS_CONNECTIONS_AND_COMPANION.md",
+      "bytes": 5753,
+      "sha256": "b7fe9a5ce8899c1cdc758042877368ae6a79b913a466ea5ee50d003d9b5b27ab"
+    },
+    {
+      "path": "docs/WORKBENCH_REDESIGN.md",
+      "bytes": 6311,
+      "sha256": "ef8616b041a09de14866226207ceb15d52442a9d6aae9f27751f48215a7f20f0"
     },
     {
       "path": "index.html",
@@ -67,18 +82,18 @@
     },
     {
       "path": "Launch-Windows.ps1",
-      "bytes": 5164,
-      "sha256": "fcc4757f12bba536931b38b83570e24406735594c79894cef5ba1837b9d01e86"
+      "bytes": 4934,
+      "sha256": "6f8e8c0f24f880a1ad9ebe676547d13873b78d7a9a472ee9a17cbb53dda49927"
     },
     {
       "path": "package-lock.json",
-      "bytes": 147332,
-      "sha256": "b3b4f3f8807d8a9a6c427c7ca2d33dc0df53fffed3aff0d96ecd24882679fe42"
+      "bytes": 143207,
+      "sha256": "0768eefdf3acf3ccfb3fdba24ab21824b04c4bec28837dc36ea0a0992268d9d1"
     },
     {
       "path": "package.json",
-      "bytes": 1738,
-      "sha256": "befb780caceb3fe5b0db6c930b612d28ebcce53fd476df2599acbaf2033249f6"
+      "bytes": 2169,
+      "sha256": "f347f16a86862ef4ca4ffda8efb41fd91d55b613018d1f0b85cbeea678fa42bd"
     },
     {
       "path": "public/uas-doctoral-tech-logo.png",
@@ -92,23 +107,58 @@
     },
     {
       "path": "README.md",
-      "bytes": 11187,
-      "sha256": "4a547437f84c20b8429c5d8615bbb22cce6552f0230c4ff564a28238e2ed566e"
+      "bytes": 15925,
+      "sha256": "5d96b12fd8b1bc409cdb2f3ec8bbb15dbda8fcd0c7bba28c16c4ab2992a3f567"
+    },
+    {
+      "path": "scripts/airframes-smoke.mjs",
+      "bytes": 11041,
+      "sha256": "977d1fb6b131723e1fea53589f249259d87fc13e3df7680b1556e25c335539d4"
+    },
+    {
+      "path": "scripts/auto-wire.test.mjs",
+      "bytes": 10541,
+      "sha256": "956e715e8559f4a414099c26525b0ad75be01640608338e538a737b4c7e9dc27"
+    },
+    {
+      "path": "scripts/companion-smoke.mjs",
+      "bytes": 4785,
+      "sha256": "b54447304abff0f5f48f2cdde6826fbb4f8e6dc087e99d59562aac0af1870a7b"
+    },
+    {
+      "path": "scripts/engineering-acceptance.test.mjs",
+      "bytes": 9911,
+      "sha256": "8209330c46070d31efef4c246ff8426d713ebbd72c501633e64d6d0d56d1b830"
+    },
+    {
+      "path": "scripts/launch-app.mjs",
+      "bytes": 2412,
+      "sha256": "af3c183f843f0ab2b3126cadebfb9b1fe273f30f23ff3e5827aa00efc4aa9fb8"
     },
     {
       "path": "scripts/launch-design-browser.mjs",
-      "bytes": 10443,
-      "sha256": "24b40640d6878d422748d03e319e188de723e50cdd3bd572c24e32dfb55e64e2"
+      "bytes": 10896,
+      "sha256": "40bf30029584898eb7905f2c3536caa3a7f82f8acecc4a027a796501260f4a74"
     },
     {
       "path": "scripts/phase1-smoke.mjs",
-      "bytes": 9515,
-      "sha256": "416ff7082fb4704cc03296bf5c37e1b124933eda89a5d21c5a1143afa2065f12"
+      "bytes": 12847,
+      "sha256": "7955660305649755a98e65094745c903e8f8cbfe46478ae84f87fdd584f03a97"
     },
     {
       "path": "scripts/prepare-github-upload.mjs",
       "bytes": 1215,
       "sha256": "8ad8f7ca64452c9c18b0377e0314461af62249135fe7097a15a7de949c38faa5"
+    },
+    {
+      "path": "scripts/sitl-integration.mjs",
+      "bytes": 15280,
+      "sha256": "ac67a26c8f58ff326478d72837e50b0f3eefe486aea2a170c871f8151dc92e19"
+    },
+    {
+      "path": "scripts/sitl-maintenance.test.mjs",
+      "bytes": 3028,
+      "sha256": "ca9760b246c7849110e14486be60963cd92433c7c20a7bd40370bf34deea4faf"
     },
     {
       "path": "scripts/source-package.mjs",
@@ -122,18 +172,43 @@
     },
     {
       "path": "scripts/three-workspace.test.mjs",
-      "bytes": 6913,
-      "sha256": "f0beccca6f65ede8054e5574041ef368287222c0193262b32eb6021f9a255441"
+      "bytes": 7647,
+      "sha256": "3925823720f6004ffdb4e513ebc3b5186d32c0407a7d28500dc4b99b4caa89f7"
+    },
+    {
+      "path": "scripts/validation-smoke.mjs",
+      "bytes": 11530,
+      "sha256": "e48dbde48cb88ce3cd1848b5e58791ae645a3470091df29383c9b7b9dffd8aaa"
+    },
+    {
+      "path": "scripts/validation.test.mjs",
+      "bytes": 7923,
+      "sha256": "e01b4e8cf7626586d494699b1584d7c734f4b0a83349346ad32a2bb06c792ed9"
     },
     {
       "path": "server/airframes.js",
-      "bytes": 3186,
-      "sha256": "5eb0da5e1b0436dc6a74e0c6fd20a3ec490c2e0fa4c327c68e2b25dbdfdfad13"
+      "bytes": 5238,
+      "sha256": "c1e32e88810db9d6dee9ff34884c0f63cd5b7a744805f47c4e95c559ea25b72a"
+    },
+    {
+      "path": "server/airframes.test.js",
+      "bytes": 8985,
+      "sha256": "a4d834b7b5dc9b2d5cef0bb6b53c49a8e9f0fccd582b1f092e1d92bcee67db26"
     },
     {
       "path": "server/artifacts.js",
       "bytes": 27625,
       "sha256": "38cc7f218383a319d08587ebd5ebab4c6cee87a672865c47d89fe3a18d8639dc"
+    },
+    {
+      "path": "server/companionVm.js",
+      "bytes": 17577,
+      "sha256": "bcbff1e82ae146c0519d75703776a1f56c34912d04a3d427bd8aa5014ecc464e"
+    },
+    {
+      "path": "server/companionVm.test.js",
+      "bytes": 2456,
+      "sha256": "d9bed758752115d37848ce717b87475d1bfcc2d56e482f66f06382134efd947c"
     },
     {
       "path": "server/customComponents.js",
@@ -142,33 +217,48 @@
     },
     {
       "path": "server/designStore.js",
-      "bytes": 2538,
-      "sha256": "d2bd7a9081ce2fe40f30c9c62446aebbba24becd6bd019d5e77405d2a74243b8"
+      "bytes": 5419,
+      "sha256": "ff14cb2d793e1e2e8cecceeac708edd9de42d5abddce4057f19fb53e99e3b392"
     },
     {
       "path": "server/designStore.test.js",
-      "bytes": 2726,
-      "sha256": "7ff0a1e0f2e0f902fd0a5fa6e23fb9343d0d50102bd32878cbaff4711ac0402c"
+      "bytes": 5056,
+      "sha256": "cb3cd017b8478969e4727b3adf7ed4e6e21af65018e5c65104f8d2c9d714e9c4"
     },
     {
       "path": "server/firmware.js",
-      "bytes": 21880,
-      "sha256": "4b0f8dcb8644f81b97fe6437b58f7ae79ee596c5470614b07098efa408f198b4"
+      "bytes": 22431,
+      "sha256": "26000f2f9179f5fc00e92f4112cccebfc60a570e4da9c8d5fc065bedaa0ac814"
     },
     {
       "path": "server/firmware.test.js",
-      "bytes": 13344,
-      "sha256": "2181bb736bc7154211f18e63f9f8ef60106c1a1db6d1391a5aa989fc95fd23b3"
+      "bytes": 13991,
+      "sha256": "f9de6bf53e48dfaad7faf7d3a82cae38a261a9ca8c42904763bb23796f2b542a"
     },
     {
       "path": "server/gazebo.js",
-      "bytes": 6232,
-      "sha256": "013670ce1dc2a0ef4d714e5902b04b553dfb5a58b5cd0ba59530e57a104efeee"
+      "bytes": 9290,
+      "sha256": "e9ff25a7bf9a8a34e74295b3e3116526a1c8a6a8fb21a15144c77c84e0c24e63"
+    },
+    {
+      "path": "server/gazebo.test.js",
+      "bytes": 5363,
+      "sha256": "a63a3e36380ce5bf4589ce30363cee5ce906d850b3127048ba1a97fd92732aeb"
+    },
+    {
+      "path": "server/gcsBridge.js",
+      "bytes": 9403,
+      "sha256": "0d1adccad186c61300ec3785043756ab519a45be17ffa54674637eeb0322def2"
+    },
+    {
+      "path": "server/gcsBridge.test.js",
+      "bytes": 9180,
+      "sha256": "8af5e1a9fff352adc542161e43aae873f9864a994a0c20cb1b499d5b9365429b"
     },
     {
       "path": "server/index.js",
-      "bytes": 26617,
-      "sha256": "977bac4280e3813f3f5a5487ab70f5585ef12c2a1d567ac8e1237596bca35e3b"
+      "bytes": 32382,
+      "sha256": "a6f2627afb1dec8f3cdb3ea86896e7fa710df5b155028d69e8660fe32009c37b"
     },
     {
       "path": "server/localOrigin.js",
@@ -186,29 +276,64 @@
       "sha256": "205fdf7cf73cc746083b01eeb44dcdd0dceee2110ffbe6cb3de0d4b940e72c4d"
     },
     {
+      "path": "server/mavlinkDefinitions.js",
+      "bytes": 7344,
+      "sha256": "e93d47763a4b4a70fb35a914455bef10eca738d63ddd19099251859b73a0bb31"
+    },
+    {
+      "path": "server/processLifecycle.js",
+      "bytes": 5075,
+      "sha256": "5fa9f5f78540b518ba70d3c5c49a541cdeb0f07d95ac7dc1c147410cbeca0b3d"
+    },
+    {
+      "path": "server/runtime.test.js",
+      "bytes": 9620,
+      "sha256": "763d39be9adb8dedc8cc9db52d756fbee187b832ce76e5693ad411e62a92fba0"
+    },
+    {
+      "path": "server/runtimeConfig.d.ts",
+      "bytes": 429,
+      "sha256": "acf26c0d02c0e0298df50d4d287735d75f6f153c27184512e9f4d468ff98f92b"
+    },
+    {
+      "path": "server/runtimeConfig.js",
+      "bytes": 1409,
+      "sha256": "9991742a8815996fd119e56962ef20671d82831c408f090d9b7ee9d339582595"
+    },
+    {
       "path": "server/setup.js",
-      "bytes": 5221,
-      "sha256": "015cc121371acf9b510ed5afb8af2490df81a62942d86a250192caca5951b9fa"
+      "bytes": 9831,
+      "sha256": "fefe801fae116277df311c5745f429cf6393f41f0ca9b7e0938a0a80eb782f46"
+    },
+    {
+      "path": "server/setup.test.js",
+      "bytes": 5000,
+      "sha256": "6674f3ed263433f8b3ba25d90fb50dd2a07294af683544cacbe4c870dad9e181"
     },
     {
       "path": "server/sitl.js",
-      "bytes": 30321,
-      "sha256": "cbee264345081fa41396571151af22c4cf92ce0efc4456b6bc1d5e6089a7d96e"
+      "bytes": 37871,
+      "sha256": "f962614583ed157cb1f9ef282b283cecf5f777b462cb61a83ef69f1155e548c8"
     },
     {
       "path": "server/sitl.test.js",
-      "bytes": 1639,
-      "sha256": "30f56b42d2c48b034723eda454bedf9490e4db01d5475e8f8ef72e54305baaf3"
+      "bytes": 7472,
+      "sha256": "f97de9b5d4fd447cb35360f85450a9400d70cda80d52ff341fe1a89793b953f7"
+    },
+    {
+      "path": "server/sitlConnection.test.js",
+      "bytes": 2664,
+      "sha256": "8c3fb0c1b0a1684ba640b4d05baf7f08f21e0f54a73a15ff8093b9619cd39848"
     },
     {
       "path": "server/telemetry.js",
-      "bytes": 34086,
-      "sha256": "09fbfdda88cb4a22c46b92258119fe83b8ec88aeda3c4418b1d6f6207f6640bc"
+      "bytes": 43978,
+      "sha256": "93c98edd1dfd14bdc07f6aa4d086abe1a8787841ea2bf3cf04f04382452c7bac"
     },
     {
       "path": "server/terminal.js",
-      "bytes": 2265,
-      "sha256": "23f7fefa01642af7d9c68f94a51ea3e287ce90abafbb4cf5a08007df2715ea2e"
+      "bytes": 2338,
+      "sha256": "1fbf967952ca5e3207e61a210c46e60a0abc112c7288ef734bb850b4c051c009"
     },
     {
       "path": "server/trace.js",
@@ -217,8 +342,18 @@
     },
     {
       "path": "server/trace.test.js",
-      "bytes": 12299,
-      "sha256": "53b1aa5a57ab406814c778becb20f3a805f6edaeacc960dbea09f08387a74311"
+      "bytes": 25548,
+      "sha256": "88067d9b700c158a1f720a14611d3a350a2d61c9bb3ae6290db447c16366a5f5"
+    },
+    {
+      "path": "server/wslSession.js",
+      "bytes": 9143,
+      "sha256": "0002da98cf6ee18c6916f2094a611ced0a92b3e2203e26776cd0e46f2c7053a2"
+    },
+    {
+      "path": "server/wslSession.test.js",
+      "bytes": 9764,
+      "sha256": "e5c22c5e8536fa74bca9ca85d7d2e58f74c67529b3722ce3c2b6b7a63106f467"
     },
     {
       "path": "server/zip.js",
@@ -227,8 +362,28 @@
     },
     {
       "path": "src/App.tsx",
-      "bytes": 222863,
-      "sha256": "29191801cb6caa979276be8d9ff3b25196bd58acb655782e84aa9ed9d70fcd3c"
+      "bytes": 226733,
+      "sha256": "77070c6dfe00abe84d2703e52dfcde907a68eedc326c19f61b59db4c0f77a8f8"
+    },
+    {
+      "path": "src/components/AirframeSilhouette.tsx",
+      "bytes": 2277,
+      "sha256": "b73468dc92703f6d6c016a13e9c4bea21ba840a929b8f06fd0624aa6dd3c4318"
+    },
+    {
+      "path": "src/components/CompanionComputerPanel.tsx",
+      "bytes": 5838,
+      "sha256": "1e8965bf34169236336f3ed6a04648bd5476b926430ff3dd391d7d1d075d8b7c"
+    },
+    {
+      "path": "src/components/ConnectionsPanel.tsx",
+      "bytes": 6004,
+      "sha256": "86d584edc41d075df17b5a6bbe5494bc183b63ad9c831e0ada981050bcc55c23"
+    },
+    {
+      "path": "src/components/ExitApplicationButton.tsx",
+      "bytes": 1300,
+      "sha256": "be61ab611f247ef895824f4679fb9fec9ada28bde8d1965ce10901998e08ec29"
     },
     {
       "path": "src/components/firmware/FirmwareDropzone.tsx",
@@ -237,8 +392,8 @@
     },
     {
       "path": "src/components/firmware/FirmwareLab.tsx",
-      "bytes": 13549,
-      "sha256": "58e84d61ac356e1072fadde3c27d059bf3c5d07ead9ec5115c08d0ecc7cab37f"
+      "bytes": 15995,
+      "sha256": "4271ad32a076969752b818ebd389f0ec13d6a022def30bc894c88b7f9f6e14d4"
     },
     {
       "path": "src/components/firmware/FirmwareMetadataPanel.tsx",
@@ -256,9 +411,19 @@
       "sha256": "9ccf660a81e621e36b9c1bef409f01d39ea545f4c25b69e5ecdbd81e7e492b12"
     },
     {
+      "path": "src/components/GcsConnectionGuide.tsx",
+      "bytes": 1873,
+      "sha256": "79428810d2778f374890a538e8f9fbdbcdb97fa62fdbe6305b7e4985aae2b2ff"
+    },
+    {
+      "path": "src/components/IssueReview.tsx",
+      "bytes": 6608,
+      "sha256": "347dc971c175546463ee5fccb7f7b15cda39ed08f8351035715eefa320e97ca7"
+    },
+    {
       "path": "src/components/LabWorkspaceChrome.tsx",
-      "bytes": 12251,
-      "sha256": "1616b7092c806d15dfc65f3a613ba890683c62d82038755990f58e4094bdc1fe"
+      "bytes": 12586,
+      "sha256": "221cc7cbc954d74e4e36cfbeb3397c7b9aa72a295edb3c8449584d45b8f21165"
     },
     {
       "path": "src/components/NewMissionWizard.tsx",
@@ -266,14 +431,34 @@
       "sha256": "2fdb7978e6275eb43a7d3a4c8b1216a2dced4d2ced4d20d7834416fd19e34767"
     },
     {
+      "path": "src/components/SitlLaunchSettings.tsx",
+      "bytes": 1625,
+      "sha256": "25a1d8d30fbe40756eadd5793ccd419ce90df3feebede65da34eede97fd7e18b"
+    },
+    {
+      "path": "src/components/SitlProcessControls.tsx",
+      "bytes": 4938,
+      "sha256": "2872f8b0d687488b5d180f0783b66a9d2f3199bc5d771074c3faae7da28e5f4a"
+    },
+    {
+      "path": "src/components/three/AirframeMesh.tsx",
+      "bytes": 11349,
+      "sha256": "cca407c17e21e23debad88ac65e4d6d1a444d26ebe3ee0033684a599c08d9e9d"
+    },
+    {
       "path": "src/components/three/ComponentMesh.tsx",
-      "bytes": 4222,
-      "sha256": "c007e0de78ebcbb6d3084f9382d7e059c00d701a000c26d4a255ad3c568236be"
+      "bytes": 3608,
+      "sha256": "71ef10aec8ba67f93c8327d3e3487a5ffef47330e0199ede0296a49c39eb28b7"
     },
     {
       "path": "src/components/three/ConnectionPath.tsx",
       "bytes": 940,
       "sha256": "533e69ec22fd3e7602289bc3dc082873393ca84040320a642e31bac54705cef0"
+    },
+    {
+      "path": "src/components/three/HardwareMesh.tsx",
+      "bytes": 5399,
+      "sha256": "fc52f7ecc6afc89870f0d63859893546d38bad3b87b7fc563c542f2fbc4d3402"
     },
     {
       "path": "src/components/three/SceneInspector.tsx",
@@ -287,8 +472,8 @@
     },
     {
       "path": "src/components/three/SceneToolbar.tsx",
-      "bytes": 2126,
-      "sha256": "ebea32cbbac8f653be52146a572b6537ca049f478c4bc7a4c2b0deda481eddd5"
+      "bytes": 2346,
+      "sha256": "bbfa241e052f812987945a96fc1e0b960e222e1868f3aa3ce4b9fd077439dac8"
     },
     {
       "path": "src/components/three/sceneTypes.ts",
@@ -302,13 +487,13 @@
     },
     {
       "path": "src/components/three/ThreeLabWorkspace.tsx",
-      "bytes": 6574,
-      "sha256": "0e4253c7f70ab1be6c076b3bafca813cd567e043c1349bcdc40c3fa896722fc3"
+      "bytes": 7072,
+      "sha256": "0fd0082664fd20c151c3446ac09d4a833786454cc1d02e4d6c26c6b9e3928885"
     },
     {
       "path": "src/components/three/ThreeScene.tsx",
-      "bytes": 3867,
-      "sha256": "99a52b69546a8af3f38bdb072405bcb5bb0e043e9e56826d8194f521d174e825"
+      "bytes": 4687,
+      "sha256": "c6ba547d6e3830741cb15a76ff47dadebb735df7822bf763cad5b5c1f3fb84a3"
     },
     {
       "path": "src/components/trace/PacketDetails.tsx",
@@ -336,39 +521,54 @@
       "sha256": "5c1622fd28a1fbe0deb862d8dddecc00f9d7965e2b8cb2fcfc419a199ddff93a"
     },
     {
+      "path": "src/components/WorkbenchNavigation.tsx",
+      "bytes": 3401,
+      "sha256": "5eb4109d21203b152161cba067d0af6ad98a69aeceb3aa5ea04c0e1a046a1def"
+    },
+    {
       "path": "src/components/WorkspaceActions.tsx",
       "bytes": 1170,
       "sha256": "91f0253b07b21db0bc6b6472487fd02a8467cf393dca1fb550a31f6954f5b8e5"
     },
     {
+      "path": "src/components/WorkspaceFilesPanel.tsx",
+      "bytes": 3318,
+      "sha256": "f4e0a8ad6c460f7913fba2a32ebb5ae58338baf7995e9735f7db572efbc01fdd"
+    },
+    {
       "path": "src/domain/airframes.ts",
-      "bytes": 5802,
-      "sha256": "62bfcf2dea43d97937f82b8551582165517b074dab6edf21c1449019ed90cb8e"
+      "bytes": 11265,
+      "sha256": "6f9a011d63e380d2efa5429a9344e47c140b70e771bbb9358d5acc5600e58421"
+    },
+    {
+      "path": "src/domain/autoWire.ts",
+      "bytes": 11195,
+      "sha256": "1a0dbd9fe63b288f7367384698e8dbc60a5411ac251454e04d350c37d103e29d"
     },
     {
       "path": "src/domain/componentCatalog.ts",
-      "bytes": 20843,
-      "sha256": "8ea74abec08c695c6ce2e9cfb7a146e2f49833f74b6e6aba98289d7e83fbd9fe"
+      "bytes": 22480,
+      "sha256": "ee040280ec9841501ba19cec5a5ed5b9d2bb224b54b4244b754221d85bdd5954"
     },
     {
       "path": "src/domain/design.ts",
-      "bytes": 6665,
-      "sha256": "9fb6b89f36f6fd24a5dcf2d3c2f30082dac6493b8d263e4dd7ea84cf137e0e56"
+      "bytes": 6980,
+      "sha256": "dad7764647571ac9d43579489a30cde09ac13c10e511cdee586e5b1c4b1c9f9f"
     },
     {
       "path": "src/domain/engineeringDomains.ts",
-      "bytes": 31142,
-      "sha256": "394e5f4aaced04acc444b21b56059de4b79d1fd22d06bc3f26c34e1f51eb4258"
+      "bytes": 33313,
+      "sha256": "ff836731dd5366817c663c203a1b710f4d875f171060e9fac14163d126153134"
     },
     {
       "path": "src/domain/management.ts",
-      "bytes": 17860,
-      "sha256": "c02f718b07f4d625fc77998ee65fdeef64203b3f52be3db27ad7df99b2b011e7"
+      "bytes": 18018,
+      "sha256": "10f36c5848c808a77ef4465d5502665dbcc58058bde009b80d5f0eea63cf1eb8"
     },
     {
       "path": "src/domain/missionTemplates.ts",
-      "bytes": 12213,
-      "sha256": "277ca22a4c36150d6d38c1e087ea9d94349485f14ac5978ee40291277a8bba78"
+      "bytes": 14127,
+      "sha256": "45ed5baba7c5e802c752f899b9f81c4dbdaf3d236b0cc49a28ed4cd9f38f626f"
     },
     {
       "path": "src/domain/productTemplates.ts",
@@ -377,8 +577,8 @@
     },
     {
       "path": "src/domain/starterDesign.ts",
-      "bytes": 4055,
-      "sha256": "07e3b33c79cd7ce8926e758361109ab339c00d6fd3dc75b2f86ea690df9970e2"
+      "bytes": 4276,
+      "sha256": "f1395bc7aa4eeca044562be7fc0b1b09cc164122b931ea5847997cd69a9eff45"
     },
     {
       "path": "src/domain/threePresentation.ts",
@@ -387,8 +587,8 @@
     },
     {
       "path": "src/domain/validators.ts",
-      "bytes": 18833,
-      "sha256": "ce1febb0947cc69d4bd8f9e77b2ec99c155e5750c616821734b0d6b511903994"
+      "bytes": 24847,
+      "sha256": "b6b0945ca73b2bd2223eaa986ef36eb764eb883ae601e0ad36686d2da4568d18"
     },
     {
       "path": "src/domain/workspaceMigration.ts",
@@ -397,8 +597,23 @@
     },
     {
       "path": "src/lib/api.ts",
-      "bytes": 20775,
-      "sha256": "d9f00e6cf77e657fa8825674de486d79457eb3ca2f1659c96456c0d4c100180f"
+      "bytes": 23342,
+      "sha256": "9c246fb63c5f654ce4cb97da88b27d691f2f015cd3d3960d389696d440644481"
+    },
+    {
+      "path": "src/lib/companionVmApi.ts",
+      "bytes": 1510,
+      "sha256": "4e5320206ea97fbb220b882b48a3517dbd12cb0243dcc2f31533bf149cb56c10"
+    },
+    {
+      "path": "src/lib/sitlMaintenance.ts",
+      "bytes": 2586,
+      "sha256": "8397cb06762e16b14e16f3125547d73236d798fbd475aad1be1232189996327b"
+    },
+    {
+      "path": "src/lib/three/airframeGeometry.ts",
+      "bytes": 836,
+      "sha256": "56430b62e1e8f15f0f2c16f856372fd4fd5cdc23114cac82a945cc42e265f38c"
     },
     {
       "path": "src/lib/three/geometryFactory.ts",
@@ -407,18 +622,23 @@
     },
     {
       "path": "src/lib/three/signalStyles.ts",
-      "bytes": 567,
-      "sha256": "4c782cf6577574a00b8eb7c8b8f5cb07f0f6938b4236d295cd11c07e9c41393a"
+      "bytes": 612,
+      "sha256": "ff088477cb8f16be44e32b2cb546864c61ea9722884cf5827a51ecffe40a8046"
     },
     {
       "path": "src/main.tsx",
-      "bytes": 494,
-      "sha256": "7487724c391bb3050281f492f25320ca43d479ebe4abe2f644ff7609b86c687d"
+      "bytes": 519,
+      "sha256": "819f26f56fa4809d994845330635411de4f514fe022510a74242805013a6b3ad"
     },
     {
       "path": "src/styles.css",
-      "bytes": 97087,
-      "sha256": "2b69d9304205bc549de5d539f8e2780e4c61167739de1ad314922ba09e6e82b2"
+      "bytes": 99759,
+      "sha256": "c64c7e5d6fd98d987c530da91c7cd0a77570fbc2331494fe406ac3f0493f177d"
+    },
+    {
+      "path": "src/workbench.css",
+      "bytes": 22428,
+      "sha256": "13d7416a1c850ee1246291cb846add248b5224e6b73aa8ca3aeb157f5a24fb54"
     },
     {
       "path": "tsconfig.json",
@@ -427,13 +647,13 @@
     },
     {
       "path": "UPLOAD_RULES.md",
-      "bytes": 2689,
-      "sha256": "cb3d7291c10a6e9e211e0cc5ab8fb39881bb34a6ccaf41733e1952a5be596c92"
+      "bytes": 2752,
+      "sha256": "6306c2e0b92632f3f7378877294973dd71d71b74cc0aafa8ea3956602b080478"
     },
     {
       "path": "vite.config.ts",
-      "bytes": 1143,
-      "sha256": "a4b19e527307b5af8b49f77b72827509f983bd2ef3785b5d187b93a496f48a35"
+      "bytes": 1235,
+      "sha256": "7282db170399b2df69d85bf59ecef84cb1867b31700377f3c83057f5b83fd328"
     }
   ]
 }
