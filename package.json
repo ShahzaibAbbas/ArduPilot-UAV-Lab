@@ -12,7 +12,7 @@
     "own:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
     "design:browser": "node scripts/launch-design-browser.mjs",
     "design:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
-    "test": "node --test server/localOrigin.test.js server/designStore.test.js server/sitl.test.js server/sitlConnection.test.js server/gazebo.test.js server/runtime.test.js server/setup.test.js server/firmware.test.js server/trace.test.js server/gcsBridge.test.js server/companionVm.test.js scripts/three-workspace.test.mjs scripts/source-package.test.mjs server/airframes.test.js server/wslSession.test.js scripts/validation.test.mjs scripts/engineering-acceptance.test.mjs scripts/auto-wire.test.mjs scripts/sitl-maintenance.test.mjs",
+    "test": "node --test server/localOrigin.test.js server/designStore.test.js server/sitl.test.js server/sitlConnection.test.js server/gazebo.test.js server/runtime.test.js server/setup.test.js server/firmware.test.js server/trace.test.js server/gcsBridge.test.js server/companionVm.test.js scripts/three-workspace.test.mjs scripts/source-package.test.mjs server/airframes.test.js server/wslSession.test.js scripts/validation.test.mjs scripts/engineering-acceptance.test.mjs scripts/auto-wire.test.mjs scripts/sitl-maintenance.test.mjs scripts/component-library-layout.test.mjs",
     "test:smoke": "node scripts/phase1-smoke.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
