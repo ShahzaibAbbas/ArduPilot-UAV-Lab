@@ -24,7 +24,7 @@ npm run app
 
 The API, Vite proxy, and browser launcher use these settings consistently. The ports must differ. MAVLink uses a separate UDP listener (default `14552`); ground-station outputs default to UDP `14550` and `14551`. Stop the listener before changing its port. Configured destinations do not prove a ground station is connected. See [workbench verification and limitations](docs/WORKBENCH_REDESIGN.md).
 
-SITL launch starts the existing telemetry reader and adds its UDP destination automatically. It keeps an active reader's port and resolves the Windows host address for WSL NAT networking. Launch defaults to no external windows; enable rebuilding when source changes, or disable it to use an existing simulator binary. Managed WSL sessions use private temporary state and clean up their own Linux descendants when stopped or when the API disconnects.
+SITL launch starts the existing telemetry reader and adds its UDP destination automatically. It keeps an active reader's port and resolves the Windows host address for WSL NAT networking. Launch defaults to no external windows; the Simulation panel's embedded MAVProxy console captures managed output and accepts bounded MAVProxy commands, while unchecking the option requests native map/console windows when the host has GUI support. Managed WSL sessions use private temporary state and clean up their own Linux descendants when stopped or when the API disconnects.
 
 Run `npm test` and `npm run build` for automated verification. With the app running, `npm run test:smoke` checks the main workflows and `npm run test:airframes` checks all 13 fixed-wing/rover presets and representative save/load round trips. `npm run test:sitl` is an opt-in integration check against an installed simulator: it launches a private API and disarmed ArduCopter, verifies telemetry, a version response, mission download, trace exports, and shutdown. It refuses to run beside an existing simulator and uses the existing binary unless `UAV_LAB_SITL_REBUILD=1` is set.
 
@@ -48,18 +48,22 @@ The guided runbook follows six stages: **Define mission**, **Choose airframe**, 
 - **Communications** - RC, telemetry, MAVLink, traffic-awareness, and regulatory broadcast links.
 - **Safety** - fault protection, failsafes, alerts, containment, and recovery hardware.
 
-Each domain presents an objective, acceptance checks, affected components or paths, recommended next actions, and a re-check control.
+Each domain presents an objective, acceptance checks, affected components or paths, recommended next actions, an **Auto-fix safe connections** action, and a re-check control. Auto-fix adds only compatible missing wires; component selection, ratings, and safety settings remain explicit engineering decisions.
 
-**Validate → Review / resolve** explains what is wrong and lists the exact components, ports, or connections to inspect. Choose a listed connection repair, open the inspector or settings, or select **Not now** to leave the issue pending. Missing required power inputs and invalid wires remain errors until corrected; fixed issues clear from both validation and acceptance. Multiple sensors are checked individually, including data paths routed through harnesses. Auto-Wire preserves occupied power inputs and existing alternative wiring.
+**Validate → Review / resolve** explains what is wrong and lists the exact components, ports, or connections to inspect. Choose a listed connection repair, use the contextual **Auto-fix** action when a deterministic repair is available, open the inspector or settings, or select **Not now** to leave the issue pending. Missing required power inputs and invalid wires remain errors until corrected; fixed issues clear from both validation and acceptance. Multiple sensors are checked individually, including data paths routed through harnesses. Auto-Wire preserves occupied power inputs and existing alternative wiring. The wiring-rating repair fills catalog baseline values or adds a rated harness with a power feed; review those values before flight use.
 
 The validation summary reports validation errors separately from acceptance progress. Verification advances only when both are complete. Scenario results belong to the design configuration that was checked; changing connections, component properties, or settings asks for a new scenario run. With the app running, `npm run test:validation` exercises issue review, repair, deferral, acceptance refresh, and undo/redo in the browser.
+
+With the app running, `npm run test:improvements` checks free-form component add/remove, the optional guide disclosure, live-to-concept 3D dynamics fallback, and acceptance auto-fix.
 
 ## Components and capabilities
 
 Windows Mission Planner TCP/UDP connection steps, optional companion GPIO wiring, Linux VM installation, and application exit behavior are documented in [Windows connections and companion VM](docs/WINDOWS_CONNECTIONS_AND_COMPANION.md).
 
 - Build with airframes, flight controllers, batteries, power modules, ESCs, motors, navigation sensors, rangefinders, airspeed sensors, optical flow, telemetry, companion computers, ADS-B/Remote ID, cameras, gimbals, parachutes, and alerts.
-- Switch between the existing 2D system graph and a procedural **3D Lab** with synchronized selection, styled signal paths, camera controls, deterministic legacy-workspace layout, and optional saved transforms.
+- Switch between the existing 2D system graph and a procedural **3D Lab** with synchronized selection, styled signal paths, camera controls, deterministic legacy-workspace layout, optional saved transforms, and live attitude/aero cues from received telemetry. When no vehicle is connected, the view clearly falls back to the configured concept wind/gust estimate.
+- The 3D Lab starts with a LayaAir 3.x renderer bridge when an official compiled browser runtime is supplied as `window.Laya`. Without that optional runtime, it reports the reason and uses the built-in Three.js renderer so the lab remains usable. The bridge exposes the same nodes, selection callback, saved layout, and telemetry-driven pose to LayaAir.
+- Use the Component library in any order. The design guide is a checklist and suggestion, while every catalog, custom template, and product preset remains directly addable; the library also exposes removal of the selected component.
 - Upload `.apj`, `.bin`, `.hex`, or `.elf` files to the local **Firmware Lab** for bounded metadata inspection and SHA-256 hashing, then run an explicitly labeled visual erase/flash/verify/boot simulation. Uploaded firmware is never executed.
 - Inspect the existing MAVLink listener through a bounded RX/TX **Packet Trace** with filters, details, capped hex previews, pause, clear, statistics, timeline stepping, and `.mavtrace.json` or CSV export.
 - Model electrical and mechanical integration with **fuses**, **power distribution boards (PDBs)**, **rated wiring harnesses**, **RC receivers**, **landing gear**, and **payload mounts**.
@@ -132,7 +136,7 @@ npm run test:smoke
 
 The smoke check covers 2D/3D selection, transform editing and `.saq` round trips, a temporary firmware upload/attachment/visual boot/stop/removal, and packet controls using an isolated synthetic buffer. It leaves live telemetry untouched and saves screenshots under the ignored `test-results/` folder.
 
-Architecture and limitations are documented in `docs/3D_LAB_ARCHITECTURE.md`, `docs/FIRMWARE_LAB.md`, and `docs/MAVLINK_TRACE.md`.
+Architecture and limitations are documented in `docs/3D_LAB_ARCHITECTURE.md`, `docs/LAYA_AIR_RENDERER.md`, `docs/FIRMWARE_LAB.md`, and `docs/MAVLINK_TRACE.md`.
 
 ## Software update button
 

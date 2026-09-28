@@ -20,6 +20,8 @@ playwright-report/
 *.log
 dist-build-check/
 dist-build-check-2/
+dist-build-final/
+dist-build-final2/
 zip_ArduPilot_UAV_Lab_for_GitHub.bat
 .DS_Store
 Thumbs.db
