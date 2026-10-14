@@ -1,6 +1,7 @@
 import { buildSwarmLayout, generateParamContent } from "./sitl.js";
 import { createZip } from "./zip.js";
 import { simulatorFrameForFrame } from "./airframes.js";
+import { batteryMetrics } from "./batteryModel.js";
 
 function safeFileName(value, fallback = "uav-design") {
   const cleaned = String(value || "")
@@ -83,16 +84,21 @@ function propertyNumber(node, key, fallback = 0) {
   return numberValue(node?.data?.properties?.[key], fallback);
 }
 
+function batteryForBom(node) {
+  const metrics = batteryMetrics(node?.data?.properties ?? {});
+  const errors = metrics.issues.filter((issue) => issue.severity === "error");
+  if (errors.length) throw Object.assign(new Error(`Battery ${node?.data?.label || "configuration"}: ${errors.map((issue) => issue.message).join(" ")}`), { statusCode: 400 });
+  return metrics;
+}
+
 function componentMassG(node) {
+  if (node?.data?.componentType === "battery") return batteryForBom(node).massG;
   const specMass = propertyNumber(node, "specMassG", 0);
   if (specMass > 0) {
     return specMass;
   }
   if (node?.data?.componentType === "frame") {
     return propertyNumber(node, "massKg", 1.35) * 1000;
-  }
-  if (node?.data?.componentType === "battery") {
-    return Math.max(80, propertyNumber(node, "cells", 4) * propertyNumber(node, "capacityMah", 5200) * 0.024);
   }
   if (node?.data?.componentType === "camera") {
     return propertyNumber(node, "massG", 45);
@@ -115,7 +121,8 @@ function componentMassG(node) {
     parachute: 180,
     "power-module": 26,
     rangefinder: 18,
-    "telemetry-radio": 22
+    "telemetry-radio": 22,
+    "virtual-telemetry": 8
   };
   return estimates[node?.data?.componentType] ?? 30;
 }
@@ -124,6 +131,10 @@ function bomRows(design) {
   const nodes = Array.isArray(design.nodes) ? design.nodes : [];
   return nodes.map((node) => {
     const properties = node?.data?.properties ?? {};
+    const battery = node?.data?.componentType === "battery" ? batteryForBom(node) : undefined;
+    const batteryNotes = battery
+      ? `${battery.chemistry} ${battery.seriesCells}S${battery.parallelCells}P; ${battery.capacityMah} mAh total pack; ${battery.nominalVoltageV.toFixed(2)} V nominal / ${battery.fullVoltageV.toFixed(2)} V full; ${battery.energyWh.toFixed(2)} Wh; ${battery.continuousCurrentA.toFixed(2)} A continuous planning limit; ${battery.massSource === "spec" ? "recorded" : "estimated"} mass`
+      : "";
     return {
       id: node?.id ?? "",
       componentType: node?.data?.componentType ?? "",
@@ -131,9 +142,9 @@ function bomRows(design) {
       manufacturer: properties.specManufacturer ?? "",
       model: properties.specModel || properties.model || properties.board || "",
       partNumber: properties.specPartNumber ?? "",
-      massG: Math.round(componentMassG(node) * 10) / 10,
+      massG: Math.round((battery?.massG ?? componentMassG(node)) * 10) / 10,
       unitCostUsd: Math.round(numberValue(properties.specUnitCostUsd, 0) * 100) / 100,
-      notes: properties.specNotes ?? ""
+      notes: [properties.specNotes, batteryNotes].filter(Boolean).join("; ")
     };
   });
 }
@@ -301,53 +312,130 @@ export function generatePrearmArtifact(design) {
   };
 }
 
+// Serialized into the standalone export: keep dependencies inside the function
+// or pass them explicitly so the downloaded file also runs outside this project.
+async function runJsonBridge(configuration, dgram) {
+  const bindHost = process.env.UAV_LAB_JSON_BRIDGE_HOST ?? configuration.bindHost;
+  const portValue = process.env.UAV_LAB_JSON_BRIDGE_PORT ?? "9002";
+  const basePort = /^\d+$/.test(portValue) ? Number(portValue) : NaN;
+  if (!Number.isInteger(basePort) || basePort < 1024
+    || basePort + (configuration.vehicles.length - 1) * 10 > 65535) {
+    throw new Error("JSON bridge base port must keep every instance port between 1024 and 65535.");
+  }
+
+  const sockets = [];
+  let stopping = false;
+  function stop() {
+    if (stopping) return;
+    stopping = true;
+    for (const socket of sockets) {
+      try { socket.close(); } catch (error) {
+        if (error.code !== "ERR_SOCKET_DGRAM_NOT_RUNNING") throw error;
+      }
+    }
+  }
+  function socketError(error) {
+    console.error("JSON bridge socket error:", error.message);
+    process.exitCode = 1;
+    stop();
+  }
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+
+  function decodeControls(message) {
+    if (message.length !== 40 && message.length !== 72) return undefined;
+    const channels = message.readUInt16LE(0) === 18458 ? 16 : message.readUInt16LE(0) === 29569 ? 32 : 0;
+    if (!channels || message.length !== 8 + channels * 2) return undefined;
+    const frameRate = message.readUInt16LE(2);
+    if (!frameRate) return undefined;
+    return {
+      frameRate,
+      frameCount: message.readUInt32LE(4),
+      pwm: Array.from({ length: channels }, (_unused, index) => message.readUInt16LE(8 + index * 2))
+    };
+  }
+
+  function sensorFrame(vehicle, timestamp, controls) {
+    // Stationary bench model at ground level. Replace this function with a physics
+    // step using controls.pwm before evaluating flight dynamics or failure recovery.
+    return {
+      timestamp,
+      imu: { gyro: [0, 0, 0], accel_body: [0, 0, -9.80665] },
+      position: [vehicle.x, vehicle.y, 0],
+      attitude: [0, 0, vehicle.heading * Math.PI / 180],
+      velocity: [0, 0, 0]
+    };
+  }
+
+  try {
+    for (const [index, vehicle] of configuration.vehicles.entries()) {
+      if (stopping) return;
+      const socket = dgram.createSocket("udp4");
+      const port = basePort + index * 10;
+      sockets.push(socket);
+      let peer;
+      socket.on("message", (message, remote) => {
+        if (stopping) return;
+        const controls = decodeControls(message);
+        if (!controls) return;
+        const endpoint = remote.address + ":" + remote.port;
+        const now = Date.now();
+        // One active peer per configured instance; reconnect after five seconds
+        // without valid controls. Arbitrary senders cannot grow a peer table.
+        if (peer && peer.endpoint !== endpoint && now - peer.lastSeenAt < 5000) return;
+        if (!peer || peer.endpoint !== endpoint) peer = { endpoint, timestamp: 0 };
+        peer.lastSeenAt = now;
+        if (peer.frameCount !== controls.frameCount) {
+          if (peer.frameCount !== undefined) {
+            const elapsedFrames = (controls.frameCount - peer.frameCount) >>> 0;
+            // Unsigned wrap advances normally; a backwards count marks a SITL restart.
+            peer.timestamp = elapsedFrames < 0x80000000 ? peer.timestamp + elapsedFrames / controls.frameRate : 0;
+          }
+          peer.frameCount = controls.frameCount;
+          peer.payload = Buffer.from("\n" + JSON.stringify(sensorFrame(vehicle, peer.timestamp, controls)) + "\n");
+        }
+        // Retransmitted controls receive the identical timestamp and sensor values.
+        socket.send(peer.payload, remote.port, remote.address, (error) => { if (error && !stopping) socketError(error); });
+      });
+      await new Promise((resolve, reject) => {
+        socket.once("error", reject);
+        socket.bind(port, bindHost, () => {
+          socket.off("error", reject);
+          socket.on("error", socketError);
+          resolve();
+        });
+      });
+      console.log("JSON bridge instance " + index + " / SYS " + vehicle.sysid + " listening on " + bindHost + ":" + port);
+    }
+    console.log("JSON bridge ready: stationary bench model; PWM dynamics and Gazebo sensor topics require a physics adapter.");
+  } catch (error) {
+    stop();
+    throw error;
+  }
+}
+
 export function generateJsonBridgeArtifact(design) {
   const settings = design.settings ?? {};
   const swarm = buildSwarmLayout(settings);
-  const port = 9002;
+  const fileName = `${safeFileName(design.name)}-json-bridge.mjs`;
+  const configuration = { bindHost: String(settings.jsonHost || "127.0.0.1"), vehicles: swarm.vehicles };
   const content = `// Generated by ArduPilot UAV Lab
-// Minimal JSON physics bridge process template for ${design.name}
-// Run with: node ${safeFileName(design.name)}-json-bridge.js
+// Standalone stationary bench model for the ArduPilot JSON UDP protocol.
+// Run with: node ${fileName}
+// Bind ports: 9002 + 10 * instance. Optional environment overrides:
+// UAV_LAB_JSON_BRIDGE_HOST and UAV_LAB_JSON_BRIDGE_PORT (base port).
+// Protocol: https://github.com/ArduPilot/ardupilot/tree/master/libraries/SITL/examples/JSON
+// Flight dynamics, GPS dropout and compass faults require an external physics/sensor adapter.
 
 import dgram from "node:dgram";
 
-const bindHost = "${settings.jsonHost || "127.0.0.1"}";
-const bindPort = ${port};
-const vehicles = ${JSON.stringify(swarm.vehicles, null, 2)};
-const socket = dgram.createSocket("udp4");
-
-function sensorFrame(vehicle) {
-  return {
-    timestamp: Date.now() / 1000,
-    vehicle: vehicle.sysid,
-    position: { x: vehicle.x, y: vehicle.y, z: -10 },
-    attitude: { roll: 0, pitch: 0, yaw: (vehicle.heading * Math.PI) / 180 },
-    velocity: { x: 0, y: 0, z: 0 },
-    gyro: { x: 0, y: 0, z: 0 },
-    accel: { x: 0, y: 0, z: -9.80665 }
-  };
-}
-
-socket.on("message", (message, remote) => {
-  const text = message.toString("utf8");
-  console.log("SITL command", remote.address + ":" + remote.port, text.slice(0, 160));
-  for (const vehicle of vehicles) {
-    const payload = Buffer.from(JSON.stringify(sensorFrame(vehicle)));
-    socket.send(payload, remote.port, remote.address);
-  }
-});
-
-socket.bind(bindPort, bindHost, () => {
-  console.log("JSON bridge listening on " + bindHost + ":" + bindPort);
-  console.log("Vehicles:", vehicles.map((vehicle) => "#" + vehicle.sysid + "(" + vehicle.x + "," + vehicle.y + ")").join(" "));
+const configuration = ${JSON.stringify(configuration, null, 2)};
+(${runJsonBridge.toString()})(configuration, dgram).catch((error) => {
+  console.error("JSON bridge could not start:", error.message);
+  process.exitCode = 1;
 });
 `;
-
-  return {
-    fileName: `${safeFileName(design.name)}-json-bridge.js`,
-    mimeType: "text/javascript",
-    content
-  };
+  return { fileName, mimeType: "text/javascript", content };
 }
 
 export function generateGazeboWorldArtifact(design) {
@@ -426,7 +514,7 @@ Generated by ArduPilot UAV Lab.
 - ardupilot/${safeName}.param: ArduPilot starter parameters
 - mission/${missionName}: QGC WPL mission for the selected scenario
 - scenario/${generatePrearmArtifact(design).fileName}: pre-arm and scenario checklist
-- json-bridge/${generateJsonBridgeArtifact(design).fileName}: Node.js JSON physics bridge template
+- json-bridge/${generateJsonBridgeArtifact(design).fileName}: standalone Node.js JSON UDP stationary bench model
 - gazebo/worlds/${worldName}: Gazebo world with swarm offsets and scenario plugins
 - gazebo/plugins: CMake project for UAV Lab Gazebo helper plugins
 
@@ -450,6 +538,12 @@ export GAZEBO_PLUGIN_PATH="$PWD/build:$GAZEBO_PLUGIN_PATH"
 \`\`\`
 
 The in-app Gazebo helper runs these commands directly when CMake, pkg-config, a C++ compiler, and a supported Gazebo package are available.
+
+## Model and sensor integration limits
+
+The JSON bridge decodes 16/32-channel servo packets and returns newline-framed stationary sensor data. It listens on UDP 9002 + 10 * instance for the configured vehicles. Set UAV_LAB_JSON_BRIDGE_HOST to a local bind address when the JSON backend host is remote. The exported model holds each vehicle at ground level; motor outputs do not drive dynamics.
+
+The Gazebo helper plugins currently report scenario configuration only. The world contains layout models without vehicle geometry, sensor topics, actuator dynamics, or an ArduPilot transport connection. GPS dropout, compass bias, rangefinder noise, delays, wind forces, and payload effects require a real vehicle model and simulator-specific adapters before they can be evaluated.
 `;
 }
 
@@ -693,6 +787,8 @@ This project builds two helper plugins referenced by the generated world:
 
 - libuav_lab_wind_profile_plugin
 - libuav_lab_sensor_failure_plugin
+
+These helpers currently log the configured settings. They do not apply wind forces, alter sensor messages, inject delays or dropouts, or change payload mass. The generated world supplies swarm layout placeholders; connect real vehicle models, sensor topics, actuator dynamics, and the ArduPilot interface before testing those effects. Successful compilation verifies the helper build only.
 
 Supported direct builds use CMake, pkg-config, a C++ compiler, and one of these pkg-config packages: gazebo, gz-sim9, gz-sim8, gz-sim7, gz-sim6, ignition-gazebo6.
 

@@ -50,6 +50,7 @@ export interface EngineeringCheckView {
   passed: boolean;
   severity?: "error" | "warning" | "info";
   nodeIds?: string[];
+  edgeIds?: string[];
   recommendation?: string;
 }
 
@@ -75,6 +76,7 @@ const domainIcons: Record<EngineeringDomainId, LucideIcon> = {
 
 interface LabHeaderProps {
   designName: string;
+  designSaved?: boolean;
   stage: WorkflowStage;
   onDesignNameChange: (value: string) => void;
   onSave: () => void;
@@ -87,6 +89,7 @@ interface LabHeaderProps {
 
 export function LabHeader({
   designName,
+  designSaved = false,
   stage,
   onDesignNameChange,
   onSave,
@@ -104,35 +107,48 @@ export function LabHeader({
         <img src="/uas-doctoral-tech-logo.png" alt="UAS Doctoral Tech" />
         <div>
           <strong>ArduPilot UAV Lab</strong>
-          <span>Guided systems notebook</span>
+          <span>SYSTEMS ENGINEERING</span>
         </div>
       </div>
 
       <label className="lab-project-name">
         <span>Project</span>
         <input value={designName} onChange={(event) => onDesignNameChange(event.target.value)} aria-label="Project name" />
+        <small className={`project-save-state ${designSaved ? "saved" : "pending"}`} role="status">
+          {designSaved ? "Snapshot saved" : "Changes not saved"}
+        </small>
+        <small className="lab-mobile-stage">Stage {stageIndex + 1}/{workflowStages.length} · {activeStage.title}</small>
       </label>
 
       <div className="lab-stage-title" aria-label="Current workflow stage">
-        <small>Stage {stageIndex + 1} of {workflowStages.length}</small>
+        <div className="lab-stage-count">
+          <small>Stage {stageIndex + 1} of {workflowStages.length}</small>
+          <div className="lab-stage-progress" aria-hidden="true">
+            {workflowStages.map((step, index) => (
+              <span key={step.id} className={index < stageIndex ? "complete" : index === stageIndex ? "active" : ""} />
+            ))}
+          </div>
+        </div>
         <strong>{activeStage.title}</strong>
         <span>{activeStage.description}</span>
       </div>
 
       <div className="lab-header-actions">
+        <div className="lab-history-actions" role="group" aria-label="Workspace history">
         <button className="lab-icon-action" type="button" onClick={onUndo} disabled={!canUndo} title="Undo" aria-label="Undo">
-          <Undo2 size={17} />
+          <Undo2 size={17} aria-hidden="true" />
         </button>
         <button className="lab-icon-action" type="button" onClick={onRedo} disabled={!canRedo} title="Redo" aria-label="Redo">
-          <Redo2 size={17} />
+          <Redo2 size={17} aria-hidden="true" />
         </button>
+        </div>
         <button className="lab-save-action" type="button" onClick={onSave}>
-          <Save size={17} />
-          Save
+          <Save size={17} aria-hidden="true" />
+          Save snapshot
         </button>
         <button className="lab-primary-action" type="button" onClick={onComplete}>
-          <Check size={18} />
-          {stage === "integrate" ? "Complete integration review" : stage === "verify" ? "Continue to simulation" : stage === "simulate" ? "Open simulation tools" : "Continue setup"}
+          <Check size={18} aria-hidden="true" />
+          {stage === "integrate" ? "Review integration" : stage === "verify" ? "Continue to simulation" : stage === "simulate" ? "Open simulation tools" : "Continue setup"}
         </button>
       </div>
     </header>
@@ -151,14 +167,14 @@ export function LabRunbook({ domainProgress, activeStage, onOpenLibrary, onSelec
   return (
     <aside className="lab-runbook" aria-label="Lab runbook">
       <div className="lab-runbook-title">
-        <BookOpenCheck size={19} />
+        <BookOpenCheck size={19} aria-hidden="true" />
         <strong>Lab runbook</strong>
       </div>
       <ol>
         {workflowStages.map((step, index) => (
           <li key={step.id} className={step.id === activeStage ? "active" : index < activeIndex ? "complete" : ""}>
             <button type="button" onClick={() => onSelectStage(step.id)} aria-current={step.id === activeStage ? "step" : undefined}>
-              <span className="lab-step-index">{index < activeIndex ? <Check size={16} /> : index + 1}</span>
+              <span className="lab-step-index">{index < activeIndex ? <Check size={16} aria-hidden="true" /> : index + 1}</span>
               <span className="lab-step-copy">
                 <strong>{step.label}</strong>
                 <small>{step.hint}</small>
@@ -170,14 +186,14 @@ export function LabRunbook({ domainProgress, activeStage, onOpenLibrary, onSelec
       </ol>
       <div className="lab-runbook-actions">
         <button type="button" onClick={onOpenLibrary}>
-          <Library size={17} />
+          <Library size={17} aria-hidden="true" />
           <span>
             <strong>Component library</strong>
             <small>Add electrical, mechanical, control, and payload systems</small>
           </span>
         </button>
         <a href="https://ardupilot.org/copter/docs/common-autopilots.html" target="_blank" rel="noreferrer">
-          <HelpCircle size={17} />
+          <HelpCircle size={17} aria-hidden="true" />
           Open integration guide
         </a>
       </div>
@@ -196,7 +212,8 @@ export function DomainStrip({ domains, activeDomain, onChange }: DomainStripProp
     <nav className="domain-strip" aria-label="Engineering domains">
       {domains.map((domain) => {
         const Icon = domainIcons[domain.id];
-        const hasIssue = domain.checks.some((check) => !check.passed && check.severity !== "info");
+        const actionCount = domain.checks.filter((check) => !check.passed && check.severity !== "info").length;
+        const hasIssue = actionCount > 0;
         return (
           <button
             key={domain.id}
@@ -205,12 +222,12 @@ export function DomainStrip({ domains, activeDomain, onChange }: DomainStripProp
             onClick={() => onChange(domain.id)}
             aria-current={activeDomain === domain.id ? "page" : undefined}
           >
-            <Icon size={17} />
+            <Icon size={17} aria-hidden="true" />
             <span>
               <strong>{domain.shortLabel ?? domain.label}</strong>
-              <small>{domain.completed}/{domain.total} checks</small>
+              <small>{domain.completed}/{domain.total} checks{hasIssue ? <span className="domain-action-badge">{actionCount} {actionCount === 1 ? "action" : "actions"}</span> : null}</small>
             </span>
-            {hasIssue ? <Circle className="domain-attention" size={8} fill="currentColor" aria-label="Needs attention" /> : null}
+            {hasIssue ? <Circle className="domain-attention" size={8} fill="currentColor" aria-hidden="true" /> : null}
           </button>
         );
       })}
@@ -222,33 +239,52 @@ interface DomainReviewPanelProps {
   domain: EngineeringDomainView;
   onShowAffected: (check: EngineeringCheckView) => void;
   onRunCheck: () => void;
+  onAutoFix: () => void;
+  autoFixCount: number;
   onOpenTools: () => void;
 }
 
-export function DomainReviewPanel({ domain, onShowAffected, onRunCheck, onOpenTools }: DomainReviewPanelProps) {
+export function DomainReviewPanel({ domain, onShowAffected, onRunCheck, onAutoFix, autoFixCount, onOpenTools }: DomainReviewPanelProps) {
   const issue = domain.checks.find((check) => !check.passed && check.severity !== "info");
+  const passedChecks = domain.checks.filter((check) => check.passed).length;
+  const remainingChecks = Math.max(0, domain.total - domain.completed);
+  const orderedChecks = [
+    ...domain.checks.filter((check) => !check.passed),
+    ...domain.checks.filter((check) => check.passed)
+  ];
   return (
     <div className="domain-review">
       <div className="domain-review-heading">
         <div>
-          <small>Active domain</small>
+          <small>Domain review</small>
           <h2>{domain.label} check</h2>
         </div>
         <button type="button" onClick={onOpenTools}>Workspace tools</button>
+      </div>
+      <div className="domain-progress">
+        <div className="domain-progress-summary">
+          <strong>{domain.completed}<span> / {domain.total} checks complete</span></strong>
+          <small>{remainingChecks} {remainingChecks === 1 ? "check" : "checks"} remaining</small>
+        </div>
+        <progress value={domain.completed} max={Math.max(1, domain.total)} aria-label={`${domain.label} completion`}>
+          {domain.completed} of {domain.total} checks complete
+        </progress>
       </div>
       <section className="domain-objective">
         <h3>Objective</h3>
         <p>{domain.description}</p>
       </section>
       <section className="domain-checks">
-        <h3>Acceptance checks</h3>
-        {domain.checks.map((check) => (
-          <article key={check.id} className={check.passed ? "passed" : `issue ${check.severity ?? "warning"}`}>
+        <h3>Acceptance checks <span className="domain-check-count" aria-hidden="true">{passedChecks}/{domain.checks.length}</span></h3>
+        <p className="scenario-note">Results update automatically as you edit. Review any remaining issue to find its location and available repairs.</p>
+        {orderedChecks.map((check) => (
+          <article key={check.id} data-check-id={check.id} className={check.passed ? "passed" : `issue ${check.severity ?? "warning"}`}>
             {check.passed ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
             <div>
               <strong>{check.label}</strong>
               <span>{check.detail}</span>
               {!check.passed && check.recommendation ? <em>{check.recommendation}</em> : null}
+              {!check.passed ? <button className="check-review-action" type="button" onClick={() => onShowAffected(check)}>Review / resolve</button> : null}
             </div>
           </article>
         ))}
@@ -259,14 +295,19 @@ export function DomainReviewPanel({ domain, onShowAffected, onRunCheck, onOpenTo
       </details>
       <section className="domain-next-action">
         <h3>Next action</h3>
-        <p>{issue ? "Resolve the highlighted issue, then run this domain check again." : "This domain is ready. Continue to the next incomplete discipline."}</p>
+        <p>{issue ? "Choose an issue to inspect or repair. Corrected issues clear automatically." : "This domain is ready. Continue to the next incomplete discipline."}</p>
+        <button className="domain-auto-fix" type="button" onClick={onAutoFix} disabled={autoFixCount === 0}>
+          <Zap size={16} aria-hidden="true" />
+          {autoFixCount > 0 ? `Auto-fix ${autoFixCount} safe connection${autoFixCount === 1 ? "" : "s"}` : "No safe auto-fixes available"}
+        </button>
+          <small className="domain-auto-fix-note">This panel repairs compatible missing wires. Open a failed check for contextual repairs such as a rated harness baseline; review component and rating choices before flight use.</small>
         {issue ? (
           <button className="domain-secondary-action" type="button" onClick={() => onShowAffected(issue)}>
-            Show affected path
+            Review next issue
           </button>
         ) : null}
         <button className="domain-primary-action" type="button" onClick={onRunCheck}>
-          <CheckCircle2 size={17} />
+          <CheckCircle2 size={17} aria-hidden="true" />
           Re-run {domain.shortLabel ?? domain.label} check
         </button>
       </section>
@@ -298,7 +339,7 @@ export function LabEvidence({
       <div className="lab-evidence-intro">
         <strong>Lab evidence</strong>
         <span>Your work and verification state stay together.</span>
-        <small>{designSaved ? "Workspace saved" : "Unsaved changes are tracked locally"}</small>
+        <small>{designSaved ? "Workspace saved" : "Save to keep your changes"}</small>
       </div>
       <div className="lab-evidence-track" aria-hidden="true">
         <span className="complete" />
@@ -307,15 +348,18 @@ export function LabEvidence({
       </div>
       <div className="lab-evidence-items">
         <button type="button" onClick={onSave}>
-          <Boxes size={24} />
+          <span className="lab-evidence-index" aria-hidden="true">01</span>
+          <Boxes size={24} aria-hidden="true" />
           <span><strong>Design snapshot</strong><small>{domainLabel}</small><em>{designSaved ? "Saved" : "Save current revision"}</em></span>
         </button>
         <button type="button" onClick={onOpenValidation} className={validationReady ? "complete" : "active"}>
-          <FileCheck2 size={24} />
+          <span className="lab-evidence-index" aria-hidden="true">02</span>
+          <FileCheck2 size={24} aria-hidden="true" />
           <span><strong>Domain verification report</strong><small>Stage 4 · Integrate systems</small><em>{validationReady ? "Ready" : "Pending review"}</em></span>
         </button>
         <button type="button" onClick={onOpenSimulation}>
-          <Play size={24} />
+          <span className="lab-evidence-index" aria-hidden="true">03</span>
+          <Play size={24} aria-hidden="true" />
           <span><strong>Simulation result</strong><small>Stage 6 · Run simulation</small><em>{simulationRan ? "Scenario recorded" : "Not run"}</em></span>
         </button>
       </div>

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnOwnedProcess, stopProcessTree } from "./processLifecycle.js";
 
 const maxOutputBytes = 1024 * 256;
 
@@ -40,7 +40,7 @@ export function runTerminalCommand(command, { cwd, timeoutMs = 60000, env = proc
     let stdout = "";
     let stderr = "";
     let timedOut = false;
-    const child = spawn(shell.command, shell.args, {
+    const child = spawnOwnedProcess(shell.command, shell.args, {
       cwd,
       env,
       windowsHide: true
@@ -48,7 +48,7 @@ export function runTerminalCommand(command, { cwd, timeoutMs = 60000, env = proc
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill(process.platform === "win32" ? undefined : "SIGTERM");
+      void stopProcessTree(child).catch((error) => { stderr = appendLimited(stderr, error.message); });
     }, timeoutMs);
     timer.unref?.();
 

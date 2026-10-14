@@ -1,11 +1,10 @@
-import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { runOwnedFile as execFileAsync } from "./processLifecycle.js";
 import { generateGazeboPluginFiles } from "./artifacts.js";
+import { windowsPathToWslPath, wslDistributions } from "./sitl.js";
 
-const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.resolve(__dirname, "..", "data");
 const gazeboProjectsDir = path.join(dataDir, "gazebo-plugins");
@@ -55,26 +54,40 @@ async function run(command, args, options = {}) {
   }
 }
 
-async function toolAvailable(command, args = ["--version"]) {
-  const result = await run(command, args, { timeoutMs: 8000 });
+export function gazeboRuntimeCommand(runtime, command, args) {
+  return runtime.source === "wsl"
+    ? { command: "wsl.exe", args: ["-d", runtime.distro, "--exec", "bash", "-lc", 'exec "$@"', "uav-lab", command, ...args] }
+    : { command, args };
+}
+
+function runtimeRunner(runtime, runCommand) {
+  return (command, args, options) => {
+    const invocation = gazeboRuntimeCommand(runtime, command, args);
+    return runCommand(invocation.command, invocation.args, options);
+  };
+}
+
+async function toolAvailable(execute, command, args = ["--version"]) {
+  const result = await execute(command, args, { timeoutMs: 8000 });
+  const output = [result.stdout, result.stderr].join("\n");
   return {
-    available: result.exitCode === 0,
+    // MSVC prints its version and exits with code 2 when no source file is supplied.
+    available: result.exitCode === 0 || (command === "cl" && /Microsoft.*C\/C\+\+.*Compiler/i.test(output)),
     command,
-    version: [result.stdout, result.stderr]
-      .join("\n")
+    version: output
       .split(/\r?\n/)
       .map((line) => line.trim())
       .find(Boolean)
   };
 }
 
-async function pkgConfigPackage(candidate) {
-  const exists = await run("pkg-config", ["--exists", candidate.packageName], { timeoutMs: 8000 });
+async function pkgConfigPackage(execute, candidate) {
+  const exists = await execute("pkg-config", ["--exists", candidate.packageName], { timeoutMs: 8000 });
   if (exists.exitCode !== 0) {
     return { ...candidate, available: false };
   }
 
-  const version = await run("pkg-config", ["--modversion", candidate.packageName], { timeoutMs: 8000 });
+  const version = await execute("pkg-config", ["--modversion", candidate.packageName], { timeoutMs: 8000 });
   return {
     ...candidate,
     available: true,
@@ -82,15 +95,17 @@ async function pkgConfigPackage(candidate) {
   };
 }
 
-export async function gazeboStatus() {
+async function probeGazeboRuntime(runtime, platform, runCommand) {
+  const execute = runtimeRunner(runtime, runCommand);
+  const compilerCommand = runtime.source === "native" && platform === "win32" ? "cl" : "c++";
   const [cmake, pkgConfig, compiler, gz, gazebo] = await Promise.all([
-    toolAvailable("cmake"),
-    toolAvailable("pkg-config"),
-    toolAvailable(process.platform === "win32" ? "cl" : "c++"),
-    toolAvailable("gz", ["--version"]),
-    toolAvailable("gazebo", ["--version"])
+    toolAvailable(execute, "cmake"),
+    toolAvailable(execute, "pkg-config"),
+    toolAvailable(execute, compilerCommand, compilerCommand === "cl" ? [] : ["--version"]),
+    toolAvailable(execute, "gz", ["sim", "--versions"]),
+    toolAvailable(execute, "gazebo", ["--version"])
   ]);
-  const packages = pkgConfig.available ? await Promise.all(packageCandidates.map(pkgConfigPackage)) : packageCandidates.map((candidate) => ({ ...candidate, available: false }));
+  const packages = pkgConfig.available ? await Promise.all(packageCandidates.map((candidate) => pkgConfigPackage(execute, candidate))) : packageCandidates.map((candidate) => ({ ...candidate, available: false }));
   const selected = packages.find((entry) => entry.available);
   const notes = [];
 
@@ -101,18 +116,38 @@ export async function gazeboStatus() {
     notes.push("pkg-config was not found on PATH.");
   }
   if (!compiler.available) {
-    notes.push(process.platform === "win32" ? "MSVC cl was not found on PATH." : "A C++ compiler was not found on PATH.");
+    notes.push(compilerCommand === "cl" ? "MSVC cl was not found on PATH. Start the app from a Developer Command Prompt or install the toolchain in WSL." : "A C++ compiler was not found on PATH.");
   }
   if (!selected) {
     notes.push("No supported Gazebo pkg-config package was found: gazebo, gz-sim9, gz-sim8, gz-sim7, gz-sim6, or ignition-gazebo6.");
   }
 
   return {
+    ...runtime,
     supported: Boolean(cmake.available && pkgConfig.available && compiler.available && selected),
     selected,
     tools: { cmake, pkgConfig, compiler, gz, gazebo },
     packages,
     notes
+  };
+}
+
+export async function gazeboStatus({ platform = process.platform, runCommand = run, listDistributions = wslDistributions } = {}) {
+  const native = await probeGazeboRuntime({ source: "native" }, platform, runCommand);
+  const searched = ["Native PATH and pkg-config packages"];
+  if (native.supported || platform !== "win32") return { ...native, searched };
+
+  // Probe a bounded number concurrently so a broken distro does not block all discovery.
+  const distros = [...new Set(await listDistributions())].slice(0, 8);
+  const results = await Promise.all(distros.map((distro) => probeGazeboRuntime({ source: "wsl", distro }, platform, runCommand)));
+  searched.push(...distros.map((distro) => `WSL ${distro}`));
+  const selected = results.find((result) => result.supported) ?? results.find((result) => result.selected) ?? native;
+  return {
+    ...selected,
+    searched,
+    notes: selected.source === "wsl"
+      ? [`Gazebo toolchain detected in WSL ${selected.distro}. Builds run in that distribution.`, ...selected.notes]
+      : [...selected.notes, ...(distros.length ? ["The checked WSL distributions also lack a complete Gazebo build toolchain."] : [])]
   };
 }
 
@@ -134,10 +169,12 @@ export async function prepareGazeboPluginProject(design) {
   };
 }
 
-export async function compileGazeboPlugins(design) {
-  const status = await gazeboStatus();
-  const project = await prepareGazeboPluginProject(design);
-  const buildDir = path.join(project.projectDir, "build");
+export async function compileGazeboPlugins(design, { getStatus = gazeboStatus, prepareProject = prepareGazeboPluginProject, runCommand = run } = {}) {
+  const status = await getStatus();
+  const project = await prepareProject(design);
+  // CMake caches contain runtime-specific paths; never reuse a native cache in WSL.
+  const buildSuffix = status.source === "wsl" ? `build-wsl-${safeFileName(status.distro, "default")}` : "build";
+  const buildDir = path.join(project.projectDir, buildSuffix);
   const steps = [];
 
   if (!status.supported || !status.selected) {
@@ -153,14 +190,23 @@ export async function compileGazeboPlugins(design) {
   }
 
   await mkdir(buildDir, { recursive: true });
+  const execute = runtimeRunner(status, runCommand);
+  const runtimePath = async (target) => {
+    if (status.source !== "wsl") return target;
+    const converted = await execute("wslpath", ["-a", "-u", target], { timeoutMs: 5000 });
+    const resolved = converted.exitCode === 0 ? String(converted.stdout).trim() : "";
+    return resolved.startsWith("/") && !resolved.includes("\n") ? resolved : windowsPathToWslPath(target);
+  };
+  const runtimeProjectDir = await runtimePath(project.projectDir);
+  const runtimeBuildDir = await runtimePath(buildDir);
   steps.push(
-    await run(
+    await execute(
       "cmake",
       [
         "-S",
-        project.projectDir,
+        runtimeProjectDir,
         "-B",
-        buildDir,
+        runtimeBuildDir,
         `-DUAV_LAB_GAZEBO_PACKAGE=${status.selected.packageName}`,
         `-DUAV_LAB_GAZEBO_TARGET=${status.selected.kind}`
       ],
@@ -169,7 +215,7 @@ export async function compileGazeboPlugins(design) {
   );
 
   if (steps.at(-1).exitCode === 0) {
-    steps.push(await run("cmake", ["--build", buildDir, "--config", "Release"], { timeoutMs: 180000 }));
+    steps.push(await execute("cmake", ["--build", runtimeBuildDir, "--config", "Release"], { timeoutMs: 180000 }));
   }
 
   const compiled = steps.length > 0 && steps.every((step) => step.exitCode === 0);

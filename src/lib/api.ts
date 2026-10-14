@@ -17,6 +17,12 @@ export interface SystemStatus {
 
 export interface SitlPlan {
   available: boolean;
+  telemetry?: { host: string; port: number; bindHost?: string };
+  gcsBridge?: {
+    tcp: { host: string; port: number };
+    outputs: Array<{ id?: string; name: string; host: string; port: number }>;
+  };
+  headless?: boolean;
   source?: "native" | "cygwin" | "wsl";
   commandLine: string;
   command?: string;
@@ -111,6 +117,9 @@ export interface MavlinkCommandResult {
 }
 
 export interface GazeboStatus {
+  source?: "native" | "wsl";
+  distro?: string;
+  searched?: string[];
   supported: boolean;
   selected?: {
     kind: "classic" | "gz-sim";
@@ -146,11 +155,55 @@ export interface GazeboCompileResult {
   message: string;
 }
 
+export interface TelemetryBattery {
+  id?: number;
+  source?: "SYS_STATUS" | "BATTERY_STATUS";
+  receivedAt?: string;
+  voltageV?: number;
+  voltagesV?: number[];
+  currentA?: number;
+  remainingPercent?: number;
+  consumedMah?: number;
+  temperatureC?: number;
+  timeRemainingS?: number;
+  chargeState?: number;
+  faultBitmask?: number;
+}
+
+/** A ground station link identified by its MAV_TYPE_GCS heartbeat. */
+export interface GcsLinkStatus {
+  transport: "udp" | "tcp";
+  host: string;
+  port: number;
+  name: string;
+  /** A client-mode GCS that registered by sending to the lab listener. */
+  dynamic: boolean;
+  sysid: number;
+  compid: number;
+  lastHeartbeatAt: string;
+  connected: boolean;
+}
+
 export interface TelemetryStatus {
+  gcsBridge?: {
+    active: boolean;
+    local?: { host: string; port: number };
+    tcp: { host: string; port: number; listening: boolean; clients: number; error?: string };
+    outputs: Array<{ id?: string; name: string; host: string; port: number; dynamic?: boolean; sentPackets?: number; receivedPackets?: number }>;
+    upstreamConnected: boolean;
+    upstream?: { host: string; port: number; lastPacketAt: string };
+    forwardedToGcs: number;
+    forwardedToSitl: number;
+    droppedFrames: number;
+    gcsLinks?: GcsLinkStatus[];
+    warnings?: string[];
+    error?: string;
+  };
   listener: {
     active: boolean;
     host: string;
     port: number;
+    pid?: number;
     startedAt?: string;
     lastPacketAt?: string;
     packetCount: number;
@@ -168,6 +221,8 @@ export interface TelemetryStatus {
       armed: boolean;
       baseMode: number;
       customMode?: number;
+      type?: number;
+      autopilot?: number;
       typeName: string;
       systemStatusName: string;
     };
@@ -202,15 +257,20 @@ export interface TelemetryStatus {
       altM?: number;
       climbMps?: number;
     };
-    battery?: {
-      voltageV?: number;
-      currentA?: number;
-      remainingPercent?: number;
-    };
+    battery?: TelemetryBattery;
+    batteries?: TelemetryBattery[];
     statusText?: {
       severity: number;
       text: string;
+      receivedAt?: string;
+      advice?: TelemetryAdvice;
     };
+    statusHistory?: Array<{
+      severity: number;
+      text: string;
+      receivedAt: string;
+      advice?: TelemetryAdvice;
+    }>;
     commandAck?: {
       command?: number;
       result: number;
@@ -227,6 +287,15 @@ export interface TelemetryStatus {
   }>;
 }
 
+export interface TelemetryAdvice {
+  category: "battery" | "failsafe" | "general";
+  title: string;
+  summary: string;
+  steps: string[];
+  recommendedAction?: "rtl" | "land";
+  severityLabel: string;
+}
+
 export interface MissionSyncStatus {
   active: boolean;
   direction?: "upload" | "download";
@@ -240,6 +309,175 @@ export interface MissionSyncStatus {
   downloadedCount: number;
   expectedCount: number;
   missionText?: string;
+}
+
+export interface FirmwareRecord {
+  id: string;
+  originalName: string;
+  safeStoredName: string;
+  extension: ".apj" | ".bin" | ".hex" | ".elf";
+  byteSize: number;
+  sha256: string;
+  uploadedAt: string;
+  detectedFormat: string;
+  metadata: {
+    boardId?: number;
+    boardRevision?: number;
+    description?: string;
+    vehicleType?: string;
+    gitIdentity?: string;
+    imageSize?: number;
+    imageEncoding?: string;
+    imageCompression?: string;
+  };
+  compatibility: {
+    status: "compatible" | "review" | "incompatible" | "unknown";
+    message: string;
+  };
+  selectedNode: {
+    nodeId?: string;
+    board?: string;
+    componentType?: string;
+  };
+  linkedSitlVehicle?: string;
+  warnings: string[];
+}
+
+export type FirmwareWorkflowState =
+  | "EMPTY"
+  | "VALIDATING"
+  | "READY"
+  | "ERASING"
+  | "FLASHING"
+  | "VERIFYING"
+  | "BOOTING"
+  | "RUNNING"
+  | "FAILED"
+  | "STOPPED";
+
+export interface FirmwareWorkflow {
+  firmwareId: string;
+  state: FirmwareWorkflowState;
+  progress: number;
+  visualSimulation: true;
+  startedAt?: string;
+  elapsedMs: number;
+  events: Array<{
+    id: string;
+    timestamp: string;
+    state: FirmwareWorkflowState;
+    progress: number;
+    origin: "workflow simulation";
+    message: string;
+  }>;
+}
+
+export interface SitlProcessStatus {
+  processes: number[];
+  details: Array<{
+    pid: number;
+    startedAt: string;
+    status: "running" | "stopping" | "exited" | "failed" | "stopped";
+    vehicle: string;
+    frame: string;
+    source?: string;
+    distro?: string;
+    command?: string;
+    telemetry?: { host: string; port: number };
+    gcsBridge?: {
+      tcp: { host: string; port: number };
+      outputs: Array<{ id?: string; name?: string; host: string; port: number }>;
+    };
+    console?: {
+      available: boolean;
+      state: "starting" | "ready" | "unavailable" | "stopped" | string;
+      reason?: string;
+      lastOutputAt?: string;
+      lineCount: number;
+      error?: string;
+    };
+    exitCode?: number | null;
+    signal?: string | null;
+    error?: string;
+    endedAt?: string;
+    /** When sim_vehicle.py reported starting MAVProxy. */
+    mavproxyStartedAt?: string;
+    /** Set while MAVProxy runs but no vehicle heartbeat reaches the lab listener. */
+    telemetryWarning?: string;
+  }>;
+  lastProcess?: SitlProcessStatus["details"][number];
+  lastFailure?: { pid?: number; at: string; message: string; code?: string | number };
+  events: Array<{
+    id: string;
+    timestamp: string;
+    origin: "SITL";
+    state: string;
+    message: string;
+    pid?: number;
+    vehicle?: string;
+    frame?: string;
+  }>;
+}
+
+export interface SitlConsoleLine {
+  at: string;
+  stream: "stdout" | "stderr" | "system";
+  text: string;
+}
+
+export interface SitlConsoleStatus {
+  pid: number;
+  available: boolean;
+  state?: "starting" | "ready" | "unavailable" | "stopped" | string;
+  reason?: string;
+  error?: string;
+  processStatus?: SitlProcessStatus["details"][number];
+  lines: SitlConsoleLine[];
+}
+
+export interface TelemetryTraceEvent {
+  id: number;
+  receivedAt: string;
+  direction: "rx" | "tx";
+  protocol: "MAVLink1" | "MAVLink2";
+  remote?: { host: string; port: number };
+  local?: { host: string; port: number };
+  datagramLength: number;
+  frameLength: number;
+  sequence: number;
+  systemId: number;
+  componentId: number;
+  messageId: number;
+  messageName: string;
+  payloadLength: number;
+  summary: string;
+  correlation?: string;
+  rawPreviewHex: string;
+  checksumStatus?: "valid" | "invalid" | "unknown";
+  signed?: boolean;
+}
+
+export interface TelemetryTraceStats {
+  paused: boolean;
+  count: number;
+  approximateBytes: number;
+  maxCount: number;
+  maxBytes: number;
+  droppedCount: number;
+  newestId?: number;
+  oldestId?: number;
+  byDirection: { rx: number; tx: number };
+  byMessageId: Array<{ messageId: number; messageName: string; count: number }>;
+}
+
+export interface TelemetryTraceFilters {
+  direction?: "all" | "rx" | "tx";
+  protocol?: "all" | "MAVLink1" | "MAVLink2";
+  systemId?: string | number;
+  componentId?: string | number;
+  messageId?: string | number;
+  text?: string;
+  limit?: number;
 }
 
 export interface AppLogEntry {
@@ -262,12 +500,35 @@ export interface TerminalResult {
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    const message = typeof payload.error === "string" ? payload.error : `Request failed with ${response.status}`;
+    const message = typeof payload?.error === "string" ? payload.error : `Local API request failed (${response.status}). Check that the server is running and its port matches the frontend proxy.`;
     throw new Error(message);
   }
+  if (payload === null) throw new Error("The server returned an invalid response. Check the API port and restart the lab.");
   return payload as T;
+}
+
+export interface RuntimeStatus {
+  checkedAt: string;
+  api: { host: string; port: number; url: string; protocol: "http"; listening: boolean; pid: number };
+  telemetry: TelemetryStatus["listener"] & { protocol: "udp"; pid?: number; gcsBridge?: TelemetryStatus["gcsBridge"] };
+  gcsBridge?: TelemetryStatus["gcsBridge"];
+  sitl: { running: boolean; processes: SitlProcessStatus["details"]; lastProcess?: SitlProcessStatus["lastProcess"]; lastFailure?: SitlProcessStatus["lastFailure"] };
+}
+
+export async function getRuntimeStatus() {
+  return parseResponse<RuntimeStatus>(await fetch("/api/runtime", { signal: AbortSignal.timeout(8000) }));
+}
+
+export async function exitApplication() {
+  return parseResponse<{ status: "shutting-down"; message: string }>(await fetch("/api/application/exit", {
+    method: "POST", headers: { "X-UAV-Lab-Action": "exit" }, signal: AbortSignal.timeout(8000)
+  }));
+}
+
+export async function stopSitlProcess(pid: number, signal = AbortSignal.timeout(8000)) {
+  return parseResponse<{ stopped: number; status: "stopping" | "stopped" }>(await fetch(`/api/sitl/processes/${pid}`, { method: "DELETE", signal }));
 }
 
 function fileNameFromDisposition(value: string | null, fallback: string) {
@@ -279,8 +540,9 @@ export async function getSystemStatus() {
   return parseResponse<SystemStatus>(await fetch("/api/system"));
 }
 
-export async function getSetupDiagnostics() {
-  return parseResponse<SetupDiagnostics>(await fetch("/api/setup/diagnostics"));
+export async function getSetupDiagnostics(simVehiclePath = "") {
+  const query = new URLSearchParams({ simVehiclePath });
+  return parseResponse<SetupDiagnostics>(await fetch(`/api/setup/diagnostics?${query}`));
 }
 
 export async function locateSimVehicle(simVehiclePath: string) {
@@ -325,8 +587,8 @@ export async function deleteCustomComponent(id: string) {
   );
 }
 
-export async function listDesigns() {
-  return parseResponse<{ designs: UavDesign[] }>(await fetch("/api/designs"));
+export async function listDesigns(query = "") {
+  return parseResponse<{ designs: UavDesign[] }>(await fetch(`/api/designs?q=${encodeURIComponent(query)}&limit=100`, { signal: AbortSignal.timeout(10000) }));
 }
 
 export async function buildParamFile(design: UavDesign) {
@@ -444,16 +706,169 @@ export async function launchSitl(design: UavDesign) {
   );
 }
 
-export async function getTelemetryStatus() {
-  return parseResponse<TelemetryStatus>(await fetch("/api/telemetry"));
+export async function getSitlProcesses(signal = AbortSignal.timeout(8000)) {
+  return parseResponse<SitlProcessStatus>(await fetch("/api/sitl/processes", { signal }));
 }
 
-export async function startTelemetryListener(port: number) {
+export async function getSitlConsole(pid: number, signal = AbortSignal.timeout(8000)) {
+  return parseResponse<SitlConsoleStatus>(await fetch(`/api/sitl/processes/${pid}/console`, { signal }));
+}
+
+export async function sendSitlConsoleInput(pid: number, input: string) {
+  return parseResponse<{ pid: number; accepted: boolean; inputLength: number }>(
+    await fetch(`/api/sitl/processes/${pid}/console`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input })
+    })
+  );
+}
+
+export async function clearSitlConsole(pid: number) {
+  return parseResponse<{ pid: number; cleared: boolean }>(
+    await fetch(`/api/sitl/processes/${pid}/console`, { method: "DELETE" })
+  );
+}
+
+export async function listFirmware() {
+  return parseResponse<{
+    firmware: FirmwareRecord[];
+    uploadLimitBytes: number;
+    executionPolicy: string;
+  }>(await fetch("/api/firmware"));
+}
+
+export async function uploadFirmware(
+  file: File,
+  target: {
+    selectedNodeId?: string;
+    selectedBoard?: string;
+    selectedComponentType?: string;
+    linkedVehicle?: string;
+  }
+) {
+  const query = new URLSearchParams({ name: file.name });
+  for (const [key, value] of Object.entries(target)) {
+    if (value) query.set(key, value);
+  }
+  return parseResponse<{ firmware: FirmwareRecord; uploadLimitBytes: number }>(
+    await fetch(`/api/firmware?${query.toString()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file
+    })
+  );
+}
+
+export async function deleteFirmware(id: string) {
+  return parseResponse<{ deleted: string }>(
+    await fetch(`/api/firmware/${encodeURIComponent(id)}`, {
+      method: "DELETE"
+    })
+  );
+}
+
+export async function attachFirmware(
+  id: string,
+  target: { selectedNodeId: string; selectedBoard?: string; selectedComponentType: string; linkedVehicle?: string }
+) {
+  return parseResponse<{ firmware: FirmwareRecord }>(
+    await fetch(`/api/firmware/${encodeURIComponent(id)}/attach`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(target)
+    })
+  );
+}
+
+export async function getFirmwareWorkflow(id: string) {
+  return parseResponse<{ workflow: FirmwareWorkflow }>(await fetch(`/api/firmware/${encodeURIComponent(id)}/workflow`));
+}
+
+export async function startFirmwareWorkflow(id: string) {
+  return parseResponse<{ workflow: FirmwareWorkflow }>(
+    await fetch(`/api/firmware/${encodeURIComponent(id)}/workflow/start`, { method: "POST" })
+  );
+}
+
+export async function stopFirmwareWorkflow(id: string) {
+  return parseResponse<{ workflow: FirmwareWorkflow }>(
+    await fetch(`/api/firmware/${encodeURIComponent(id)}/workflow/stop`, { method: "POST" })
+  );
+}
+
+export async function wipeFirmwareWorkflow(id: string) {
+  return parseResponse<{ workflow: FirmwareWorkflow }>(
+    await fetch(`/api/firmware/${encodeURIComponent(id)}/workflow/wipe`, { method: "POST" })
+  );
+}
+
+export async function resetFirmwareWorkflow(id: string) {
+  return parseResponse<{ workflow: FirmwareWorkflow }>(
+    await fetch(`/api/firmware/${encodeURIComponent(id)}/workflow/reset`, { method: "POST" })
+  );
+}
+
+export async function getTelemetryStatus() {
+  return parseResponse<TelemetryStatus>(await fetch("/api/telemetry", { signal: AbortSignal.timeout(6000) }));
+}
+
+function traceQuery(filters: TelemetryTraceFilters = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "" && value !== "all") {
+      query.set(key, String(value));
+    }
+  }
+  const serialized = query.toString();
+  return serialized ? `?${serialized}` : "";
+}
+
+export async function getTelemetryTrace(filters: TelemetryTraceFilters = {}) {
+  return parseResponse<{ events: TelemetryTraceEvent[]; stats: TelemetryTraceStats }>(
+    await fetch(`/api/telemetry/trace${traceQuery(filters)}`)
+  );
+}
+
+export async function getTelemetryTraceStats() {
+  return parseResponse<TelemetryTraceStats>(await fetch("/api/telemetry/trace/stats"));
+}
+
+export async function clearTelemetryTrace() {
+  return parseResponse<{ cleared: number; stats: TelemetryTraceStats }>(
+    await fetch("/api/telemetry/trace/clear", { method: "POST" })
+  );
+}
+
+export async function setTelemetryTracePaused(paused: boolean) {
+  return parseResponse<TelemetryTraceStats>(
+    await fetch(`/api/telemetry/trace/${paused ? "pause" : "resume"}`, { method: "POST" })
+  );
+}
+
+export async function exportTelemetryTrace(format: "json" | "csv", filters: TelemetryTraceFilters = {}) {
+  const query = new URLSearchParams({ format });
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "" && value !== "all") {
+      query.set(key, String(value));
+    }
+  }
+  const response = await fetch(`/api/telemetry/trace/export?${query.toString()}`);
+  if (!response.ok) {
+    await parseResponse(response);
+  }
+  return {
+    fileName: fileNameFromDisposition(response.headers.get("Content-Disposition"), `telemetry.mavtrace.${format}`),
+    blob: await response.blob()
+  } satisfies BinaryArtifactResult;
+}
+
+export async function startTelemetryListener(port: number, host = "127.0.0.1") {
   return parseResponse<TelemetryStatus>(
     await fetch("/api/telemetry/listener", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ port })
+      body: JSON.stringify({ port, host })
     })
   );
 }
@@ -476,8 +891,9 @@ export async function sendMavlinkCommand(command: MavlinkCommandRequest) {
   );
 }
 
-export async function getMissionStatus() {
-  return parseResponse<{ mission: MissionSyncStatus }>(await fetch("/api/mission/status"));
+export async function getMissionStatus(signal?: AbortSignal) {
+  const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(6000)]) : AbortSignal.timeout(6000);
+  return parseResponse<{ mission: MissionSyncStatus }>(await fetch("/api/mission/status", { signal: requestSignal }));
 }
 
 export async function uploadMission(sysid: number, compid: number | undefined, missionText: string) {

@@ -21,12 +21,15 @@ export const componentCatalog: ComponentDefinition[] = [
     type: "frame",
     name: "Airframe",
     category: "Core",
-    summary: "Physical frame and motor layout.",
+    summary: "Airframe or ground chassis with its physical layout.",
     icon: "Frame",
     ports: [mountOut],
     properties: [
       { key: "layout", label: "Layout", type: "select", defaultValue: "quad-x", options: airframeValues },
       { key: "wheelbaseMm", label: "Wheelbase", type: "number", defaultValue: 450, min: 120, max: 3000, unit: "mm" },
+      { key: "spanMm", label: "Span / track width", type: "number", defaultValue: 450, min: 100, max: 20000, unit: "mm" },
+      { key: "lengthMm", label: "Body length", type: "number", defaultValue: 450, min: 100, max: 20000, unit: "mm" },
+      { key: "heightMm", label: "Body height", type: "number", defaultValue: 160, min: 20, max: 5000, unit: "mm" },
       { key: "massKg", label: "Dry mass", type: "number", defaultValue: 1.35, min: 0.1, max: 100, unit: "kg" }
     ]
   },
@@ -54,15 +57,17 @@ export const componentCatalog: ComponentDefinition[] = [
       powerIn,
       { id: "analog-in", label: "ADC", kind: "analog", direction: "input" },
       { id: "uart-in", label: "UART", kind: "uart", direction: "input" },
+      { id: "gpio-in", label: "GPIO", kind: "gpio", direction: "input" },
       { id: "i2c-in", label: "I2C", kind: "i2c", direction: "input" },
       { id: "can-in", label: "CAN", kind: "can", direction: "input" },
       { id: "pwm-out", label: "PWM", kind: "pwm", direction: "output" },
       { id: "uart-out", label: "UART", kind: "uart", direction: "output" },
+      { id: "gpio-out", label: "GPIO", kind: "gpio", direction: "output" },
       { id: "i2c-out", label: "I2C", kind: "i2c", direction: "output" },
       { id: "can-out", label: "CAN", kind: "can", direction: "output" }
     ],
     properties: [
-      { key: "board", label: "Board", type: "select", defaultValue: "Cube Orange+", options: ["Cube Orange+", "Pixhawk 6C", "Pixhawk 4", "SITL-only"] },
+      { key: "board", label: "Board", type: "select", defaultValue: "Cube Orange+", options: ["Cube Orange+", "Pixhawk 6C", "Pixhawk 4", "Pixhawk 6X", "Matek H743", "SITL-only"] },
       { key: "firmware", label: "Firmware", type: "select", defaultValue: "ArduCopter", options: ["ArduCopter", "ArduPlane", "Rover"] },
       { key: "imuRateHz", label: "IMU rate", type: "number", defaultValue: 400, min: 50, max: 1000, unit: "Hz" }
     ]
@@ -71,13 +76,28 @@ export const componentCatalog: ComponentDefinition[] = [
     type: "battery",
     name: "Battery",
     category: "Power",
-    summary: "Main energy source.",
+    summary: "LiPo, LiHV, or Li-ion pack with voltage, discharge, connector, and installation data.",
     icon: "Battery",
     ports: [powerOut],
     properties: [
-      { key: "cells", label: "Cells", type: "number", defaultValue: 4, min: 1, max: 14, unit: "S" },
-      { key: "capacityMah", label: "Capacity", type: "number", defaultValue: 5200, min: 300, max: 50000, unit: "mAh" },
-      { key: "cRating", label: "C rating", type: "number", defaultValue: 35, min: 5, max: 200 }
+      { key: "chemistry", label: "Chemistry", type: "select", defaultValue: "LiPo", options: ["LiPo", "LiHV", "Li-ion"] },
+      { key: "cells", label: "Series cells", type: "number", defaultValue: 4, min: 1, max: 24, unit: "S" },
+      { key: "parallelCells", label: "Parallel cells", type: "number", defaultValue: 1, min: 1, max: 20, unit: "P" },
+      { key: "capacityMah", label: "Total pack capacity", type: "number", defaultValue: 5200, min: 50, max: 100000, unit: "mAh" },
+      { key: "cRating", label: "Continuous discharge (0 = unknown)", type: "number", defaultValue: 35, min: 0, max: 250, unit: "C" },
+      { key: "burstCRating", label: "Burst discharge (0 = unknown)", type: "number", defaultValue: 0, min: 0, max: 500, unit: "C" },
+      { key: "continuousCurrentA", label: "Pack current limit (0 = unspecified)", type: "number", defaultValue: 0, min: 0, max: 2000, unit: "A" },
+      { key: "connectorCurrentA", label: "Connector/wiring limit (0 = unspecified)", type: "number", defaultValue: 0, min: 0, max: 2000, unit: "A" },
+      { key: "nominalCellVoltageV", label: "Nominal cell voltage (0 = chemistry)", type: "number", defaultValue: 0, min: 0, max: 4.5, unit: "V" },
+      { key: "maxCellVoltageV", label: "Full cell voltage (0 = chemistry)", type: "number", defaultValue: 0, min: 0, max: 4.5, unit: "V" },
+      { key: "lowCellVoltageV", label: "Low cell voltage (0 = lab default)", type: "number", defaultValue: 0, min: 0, max: 4.5, unit: "V" },
+      { key: "criticalCellVoltageV", label: "Critical cell voltage (0 = lab default)", type: "number", defaultValue: 0, min: 0, max: 4.5, unit: "V" },
+      { key: "chargeRateC", label: "Charge rate (0 = unknown)", type: "number", defaultValue: 0, min: 0, max: 20, unit: "C" },
+      { key: "dischargeConnector", label: "Discharge connector", type: "text", defaultValue: "" },
+      { key: "balanceConnector", label: "Balance connector", type: "text", defaultValue: "" },
+      { key: "packLengthMm", label: "Pack length (0 = unknown)", type: "number", defaultValue: 0, min: 0, max: 2000, unit: "mm" },
+      { key: "packWidthMm", label: "Pack width (0 = unknown)", type: "number", defaultValue: 0, min: 0, max: 2000, unit: "mm" },
+      { key: "packHeightMm", label: "Pack height (0 = unknown)", type: "number", defaultValue: 0, min: 0, max: 2000, unit: "mm" }
     ]
   },
   {
@@ -92,8 +112,10 @@ export const componentCatalog: ComponentDefinition[] = [
       { id: "analog-out", label: "ADC", kind: "analog", direction: "output" }
     ],
     properties: [
-      { key: "maxAmps", label: "Max current", type: "number", defaultValue: 90, min: 5, max: 300, unit: "A" },
-      { key: "regulatedVoltage", label: "Regulator", type: "number", defaultValue: 5.3, min: 4.8, max: 12, unit: "V" }
+      { key: "maxAmps", label: "Continuous current", type: "number", defaultValue: 90, min: 5, max: 300, unit: "A" },
+      { key: "peakAmps", label: "Burst current", type: "number", defaultValue: 140, min: 5, max: 500, unit: "A" },
+      { key: "inputCellsMax", label: "Maximum battery cells", type: "number", defaultValue: 14, min: 2, max: 24, unit: "S" },
+      { key: "regulatedVoltage", label: "Regulator", type: "number", defaultValue: 5.2, min: 4.8, max: 12, unit: "V" }
     ]
   },
   {
@@ -167,24 +189,42 @@ export const componentCatalog: ComponentDefinition[] = [
       powerOut
     ],
     properties: [
-      { key: "protocol", label: "Protocol", type: "select", defaultValue: "PWM", options: ["PWM", "OneShot", "DShot150", "DShot300", "DShot600"] },
-      { key: "maxAmps", label: "Max current", type: "number", defaultValue: 35, min: 5, max: 200, unit: "A" }
+      { key: "protocol", label: "Protocol", type: "select", defaultValue: "PWM", options: ["PWM", "OneShot", "DShot150", "DShot300", "DShot600", "DroneCAN"] },
+      { key: "maxAmps", label: "Continuous current", type: "number", defaultValue: 35, min: 5, max: 200, unit: "A" },
+      { key: "peakAmps", label: "Peak current (0 = unknown)", type: "number", defaultValue: 0, min: 0, max: 300, unit: "A" },
+      { key: "maxCells", label: "Maximum battery cells", type: "number", defaultValue: 6, min: 1, max: 24, unit: "S" },
+      { key: "becVoltage", label: "BEC voltage (0 = none)", type: "number", defaultValue: 0, min: 0, max: 12, unit: "V" }
     ]
   },
   {
     type: "motor",
     name: "Motor",
     category: "Propulsion",
-    summary: "Brushless propulsion motor.",
+    summary: "Lift, cruise, or ground-drive propulsion motor.",
     icon: "CircleDot",
     ports: [
       powerIn,
       mountIn
     ],
     properties: [
+      { key: "propulsionRole", label: "Role", type: "select", defaultValue: "Lift", options: ["Lift", "Cruise", "Ground drive"] },
       { key: "kv", label: "KV", type: "number", defaultValue: 920, min: 100, max: 4000 },
       { key: "propSize", label: "Prop size", type: "text", defaultValue: "10x4.5" },
-      { key: "thrustGrams", label: "Thrust", type: "number", defaultValue: 950, min: 50, max: 20000, unit: "g" }
+      { key: "driveTorqueNm", label: "Ground drive torque", type: "number", defaultValue: 0, min: 0, max: 1000, unit: "Nm" },
+      { key: "thrustGrams", label: "Thrust", type: "number", defaultValue: 950, min: 0, max: 20000, unit: "g" }
+    ]
+  },
+  {
+    type: "servo",
+    name: "Control Servo",
+    category: "Propulsion",
+    summary: "Actuates a control surface or Rover steering linkage.",
+    icon: "Settings2",
+    ports: [powerIn, mountIn, { id: "pwm-in", label: "PWM", kind: "pwm", direction: "input", required: true }],
+    properties: [
+      { key: "function", label: "Control function", type: "text", defaultValue: "Control surface" },
+      { key: "voltage", label: "Supply voltage", type: "number", defaultValue: 5, min: 3, max: 12, unit: "V" },
+      { key: "torqueKgCm", label: "Rated torque", type: "number", defaultValue: 3, min: 0.1, max: 200, unit: "kg cm" }
     ]
   },
   {
@@ -198,7 +238,7 @@ export const componentCatalog: ComponentDefinition[] = [
       { id: "uart-out", label: "UART", kind: "uart", direction: "output" }
     ],
     properties: [
-      { key: "model", label: "Model", type: "select", defaultValue: "u-blox M10", options: ["u-blox M10", "u-blox F9P RTK", "SITL GPS"] },
+      { key: "model", label: "Model", type: "select", defaultValue: "u-blox M10", options: ["u-blox M10", "u-blox F9P RTK", "H-RTK F9P RTK", "Here3+ DroneCAN", "SITL GPS"] },
       { key: "rateHz", label: "Rate", type: "number", defaultValue: 5, min: 1, max: 25, unit: "Hz" }
     ]
   },
@@ -213,7 +253,7 @@ export const componentCatalog: ComponentDefinition[] = [
       { id: "i2c-out", label: "I2C", kind: "i2c", direction: "output" }
     ],
     properties: [
-      { key: "model", label: "Model", type: "select", defaultValue: "RM3100", options: ["RM3100", "IST8310", "HMC5883", "SITL Compass"] },
+      { key: "model", label: "Model", type: "select", defaultValue: "RM3100", options: ["RM3100", "DroneCAN RM3100", "IST8310", "HMC5883", "SITL Compass"] },
       { key: "external", label: "External", type: "boolean", defaultValue: true }
     ]
   },
@@ -225,11 +265,12 @@ export const componentCatalog: ComponentDefinition[] = [
     icon: "ScanLine",
     ports: [
       powerIn,
+      mountIn,
       { id: "i2c-out", label: "I2C", kind: "i2c", direction: "output" },
       { id: "uart-out", label: "UART", kind: "uart", direction: "output" }
     ],
     properties: [
-      { key: "model", label: "Model", type: "select", defaultValue: "Benewake TFmini", options: ["Benewake TFmini", "LightWare SF11", "SITL Rangefinder"] },
+      { key: "model", label: "Model", type: "select", defaultValue: "Benewake TFmini", options: ["Benewake TFmini", "Benewake TFmini-S", "LightWare SF11", "SITL Rangefinder"] },
       { key: "rangeMeters", label: "Range", type: "number", defaultValue: 12, min: 1, max: 120, unit: "m" }
     ]
   },
@@ -289,6 +330,24 @@ export const componentCatalog: ComponentDefinition[] = [
     ]
   },
   {
+    type: "virtual-telemetry",
+    name: "Virtual MAVLink Telemetry",
+    category: "Comms",
+    summary: "Software telemetry endpoint for SITL and Mission Planner relay connections.",
+    icon: "Radio",
+    ports: [
+      powerIn,
+      { id: "uart-in", label: "MAVLink", kind: "uart", direction: "input" }
+    ],
+    properties: [
+      { key: "transport", label: "Transport", type: "select", defaultValue: "SITL bridge", options: ["SITL bridge", "UDP", "TCP"] },
+      { key: "host", label: "Bind / destination host", type: "text", defaultValue: "127.0.0.1" },
+      { key: "udpPort", label: "UDP port", type: "number", defaultValue: 14551, min: 1024, max: 65535 },
+      { key: "tcpPort", label: "TCP relay port", type: "number", defaultValue: 5762, min: 1024, max: 65535 },
+      { key: "missionPlannerReady", label: "Mission Planner relay", type: "boolean", defaultValue: true }
+    ]
+  },
+  {
     type: "rc-receiver",
     name: "RC Receiver",
     category: "Comms",
@@ -300,7 +359,7 @@ export const componentCatalog: ComponentDefinition[] = [
       { id: "telemetry-in", label: "TLM", kind: "telemetry", direction: "input" }
     ],
     properties: [
-      { key: "protocol", label: "Protocol", type: "select", defaultValue: "CRSF", options: ["CRSF", "SBUS", "FPort", "DSM/SRXL2", "IBUS"] },
+      { key: "protocol", label: "Protocol", type: "select", defaultValue: "CRSF", options: ["CRSF", "ELRS/CRSF", "SBUS", "FPort", "DSM/SRXL2", "IBUS"] },
       { key: "band", label: "Band", type: "select", defaultValue: "2.4 GHz", options: ["433 MHz", "868 MHz", "915 MHz", "2.4 GHz"] },
       { key: "diversity", label: "Antenna diversity", type: "boolean", defaultValue: true },
       { key: "failsafe", label: "Receiver failsafe", type: "select", defaultValue: "No pulses", options: ["No pulses", "Hold", "Preset channels"] }
@@ -315,8 +374,10 @@ export const componentCatalog: ComponentDefinition[] = [
     ports: [
       powerIn,
       { id: "uart-in", label: "UART", kind: "uart", direction: "input" },
+      { id: "gpio-in", label: "GPIO", kind: "gpio", direction: "input" },
       { id: "video-in", label: "VID", kind: "video", direction: "input" },
       { id: "uart-out", label: "UART", kind: "uart", direction: "output" },
+      { id: "gpio-out", label: "GPIO", kind: "gpio", direction: "output" },
       { id: "can-out", label: "CAN", kind: "can", direction: "output" }
     ],
     properties: [
@@ -435,7 +496,7 @@ export function getPort(componentType: string, handleId?: string | null): Compon
   if (!handleId) {
     return undefined;
   }
-  return getComponentDefinition(componentType).ports.find((port) => port.id === handleId);
+  return componentCatalog.find((component) => component.type === componentType)?.ports.find((port) => port.id === handleId);
 }
 
 export function defaultPropertiesForComponent(componentType: string) {

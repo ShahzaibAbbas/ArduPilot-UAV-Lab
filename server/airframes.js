@@ -1,4 +1,4 @@
-const airframes = [
+const rotorAirframes = [
   ["single-rotor", "Single Rotor", 1, "heli"],
   ["dual-rotor", "Dual Rotor", 2, "quad"],
   ["tri-y", "Tri Y", 3, "tri"],
@@ -14,10 +14,32 @@ const airframes = [
   ...Array.from({ length: 20 }, (_, index) => {
     const rotorCount = index + 13;
     return [`${rotorCount}-rotor-x`, `${rotorCount} Rotor X`, rotorCount, "octa"];
-  }),
+  })
+].map(([value, label, rotorCount, simulatorFrame]) => ({ value, label, rotorCount, simulatorFrame, vehicle: "ArduCopter", propulsionMotorCount: rotorCount }));
+
+// Keys and simulator models are regression-checked against the browser catalog.
+// Simulator names come from ArduPilot Tools/autotest/pysim/vehicleinfo.json.
+const fixedWingAirframes = [
   ["fixed-wing", "Fixed Wing", 1, "plane"],
-  ["rover", "Rover", 0, "rover"]
-].map(([value, label, rotorCount, simulatorFrame]) => ({ value, label, rotorCount, simulatorFrame }));
+  ["fixed-wing-trainer", "High-wing Trainer", 1, "plane"],
+  ["fixed-wing-flying-wing", "Flying Wing / Elevon", 1, "plane-elevon"],
+  ["fixed-wing-vtail", "V-tail Survey Plane", 1, "plane-vtail"],
+  ["fixed-wing-glider", "Motor Glider / Soaring", 1, "plane-soaring"],
+  ["fixed-wing-twin-boom", "Twin-boom Pusher", 1, "plane"],
+  ["quadplane", "QuadPlane Lift + Cruise", 5, "quadplane"]
+].map(([value, label, rotorCount, simulatorFrame]) => ({ value, label, rotorCount, simulatorFrame, vehicle: "ArduPlane", propulsionMotorCount: rotorCount }));
+
+const roverAirframes = [
+  ["rover", "Rover", 1, "rover"],
+  ["rover-buggy", "Off-road Buggy", 1, "rover"],
+  ["rover-skid", "Skid-steer 4WD", 2, "rover-skid"],
+  ["rover-tracked", "Tracked Crawler", 2, "rover-skid"],
+  ["rover-6x6", "Six-wheel Explorer", 2, "rover-skid"],
+  ["rover-balancebot", "Two-wheel Balance Bot", 2, "balancebot"]
+].map(([value, label, propulsionMotorCount, simulatorFrame]) => ({ value, label, rotorCount: 0, simulatorFrame, vehicle: "Rover", propulsionMotorCount }));
+
+export const airframeOptions = [...rotorAirframes, ...fixedWingAirframes, ...roverAirframes];
+const airframes = airframeOptions;
 
 function normalizedFrame(frame) {
   return String(frame || "")
@@ -27,7 +49,7 @@ function normalizedFrame(frame) {
 
 export function rotorCountForFrame(frame) {
   const normalized = normalizedFrame(frame);
-  const direct = airframes.find((option) => option.value === normalized || option.label.toLowerCase() === normalized);
+  const direct = findAirframe(normalized);
   if (direct) {
     return direct.rotorCount;
   }
@@ -58,7 +80,7 @@ export function airframeLabel(frame) {
 
 export function simulatorFrameForFrame(frame) {
   const normalized = normalizedFrame(frame);
-  const direct = airframes.find((option) => option.value === normalized || option.label.toLowerCase() === normalized);
+  const direct = findAirframe(normalized);
   if (direct) {
     return direct.simulatorFrame;
   }
@@ -72,6 +94,29 @@ export function simulatorFrameForFrame(frame) {
 }
 
 export function usesSimulatorFallback(frame) {
+  const direct = findAirframe(normalizedFrame(frame));
+  if (direct && direct.vehicle !== "ArduCopter") return false;
   const rotorCount = rotorCountForFrame(frame);
   return ![0, 1, 3, 4, 6, 8].includes(rotorCount);
+}
+
+// Several airframes share one SITL model (Dual Rotor and Quad X both use "quad").
+// A bare simulator name means that model's native "<model>-x" frame when one exists.
+function findAirframe(normalized) {
+  return airframes.find((option) => option.value === normalized || option.label.toLowerCase() === normalized)
+    ?? airframes.find((option) => option.simulatorFrame === normalized && option.value === `${normalized}-x`)
+    ?? airframes.find((option) => option.simulatorFrame === normalized);
+}
+
+export function vehicleForAirframe(frame) {
+  const normalized = normalizedFrame(frame);
+  const direct = findAirframe(normalized);
+  if (direct) return direct.vehicle;
+  if (normalized.includes("fixed") || normalized.includes("plane")) return "ArduPlane";
+  if (normalized.includes("rover")) return "Rover";
+  return "ArduCopter";
+}
+
+export function propulsionMotorCountForFrame(frame) {
+  return findAirframe(normalizedFrame(frame))?.propulsionMotorCount ?? rotorCountForFrame(frame);
 }

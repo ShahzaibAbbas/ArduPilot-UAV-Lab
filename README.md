@@ -4,7 +4,7 @@ Design a UAV as one connected system, review it across every engineering discipl
 
 ## Redesigned engineering workspace
 
-The workspace has grouped navigation for design, simulation, and utilities, a larger 2D/3D canvas, a focused inspector, and compact verification evidence. The mission runbook is available in the sidebar. Narrow screens stack the inspector below the canvas.
+The workspace follows the supplied Google Stitch desktop and mobile exports: a light searchable tool sidebar, navy command header, readable 2D/3D controls, and focused verification inspector. Compact screens use a Tools dialog and direct Workspace/Inspector switching; phones also have quick Workspace, Review, Mission, Params, and Firmware shortcuts. Inter and JetBrains Mono are bundled locally. See [Stitch references and verification](docs/STITCH_REDESIGN.md).
 
 - **Ports & setup** shows the browser address, actual API TCP port, MAVLink UDP listener, managed SITL processes, simulator discovery, and configured ground-station destinations. Use it to re-run autodetection, enter a simulator location, configure telemetry, or stop a managed simulation.
 - **Workspace files** automatically lists saved lab snapshots. Search by name, vehicle, frame, or ID; open a result or browse for a `.saq`/JSON file elsewhere on the computer. Corrupt snapshots no longer hide valid saved workspaces.
@@ -26,7 +26,11 @@ The API, Vite proxy, and browser launcher use these settings consistently. The p
 
 SITL launch starts the existing telemetry reader and adds its UDP destination automatically. It keeps an active reader's port and resolves the Windows host address for WSL NAT networking. Launch defaults to no external windows; the Simulation panel's embedded MAVProxy console captures managed output and accepts bounded MAVProxy commands, while unchecking the option requests native map/console windows when the host has GUI support. Managed WSL sessions use private temporary state and clean up their own Linux descendants when stopped or when the API disconnects.
 
-Run `npm test` and `npm run build` for automated verification. With the app running, `npm run test:smoke` checks the main workflows and `npm run test:airframes` checks all 13 fixed-wing/rover presets and representative save/load round trips. `npm run test:sitl` is an opt-in integration check against an installed simulator: it launches a private API and disarmed ArduCopter, verifies telemetry, a version response, mission download, trace exports, and shutdown. It refuses to run beside an existing simulator and uses the existing binary unless `UAV_LAB_SITL_REBUILD=1` is set.
+Run `npm test` and `npm run build` for automated verification; development checks use Node.js 22 or newer, matching CI. With the app running, `npm run test:smoke` checks the main workflows and `npm run test:airframes` checks all 13 fixed-wing/rover presets and representative save/load round trips. `npm run test:sitl` is an opt-in integration check against an installed simulator: it launches a private API and disarmed ArduCopter, verifies telemetry, a version response, mission download, trace exports, and shutdown. It refuses to run beside an existing simulator and uses the existing binary unless `UAV_LAB_SITL_REBUILD=1` is set.
+
+The **Mission** panel imports, uploads, downloads, and saves QGC WPL 110 routes. Browser imports and backend transfers share the same file validation, with a 2 MiB / 5,000-item limit. Single-point and stationary routes are accepted; local-coordinate routes retain their coordinates without inventing a global distance. A header-only empty mission is explicitly labeled because uploading it clears the vehicle route. **Use generated route** restores the design-based upload. Transfer controls lock while a request starts or sync runs, and delayed status responses cannot overwrite a newer transfer. Run `npm run test:mission` with the app running for isolated browser checks; all mission traffic in that check is synthetic.
+
+Recent logic and reliability changes, verification commands, and remaining simulator integration work are recorded in [the logic update notes](docs/LOGIC_AND_RELIABILITY.md).
 
 ## Your first 10 minutes
 
@@ -71,7 +75,9 @@ Windows Mission Planner TCP/UDP connection steps, optional companion GPIO wiring
 - Estimate mass, energy, endurance, range, payload and mission reserve, wind penalty, and current margin from the selected components and recorded specifications.
 - Save/load `.saq` workspaces, export JSON designs and ArduPilot `.param` starters, and maintain reusable custom component templates under `data/library/`.
 - Prepare native and JSON-backend SITL commands, multi-vehicle layouts, QGC waypoint missions, pre-arm checklists, Gazebo assets, and ZIP simulator bundles.
+- Export a standalone `.mjs` JSON bridge with ArduPilot packet framing and separate instance ports/clocks. It supplies a stationary bench model; vehicle dynamics and sensor fault injection require a physics adapter.
 - Read MAVLink UDP telemetry and issue arm, disarm, takeoff, mode, RTL, land, and custom `COMMAND_LONG` actions.
+- Add a **Virtual MAVLink Telemetry** component to a design. SITL exposes it through the lab's loopback relay (TCP `5762` or configured UDP outputs) so Mission Planner can connect without physical telemetry hardware. Warning, critical, and informational `STATUSTEXT` messages plus low-battery readings open an operator alert with explainable troubleshooting steps and an explicit RTL/Land recommendation.
 - Use the in-app terminal, lifecycle logs, Gazebo helper tooling, and conservative Git-based software updater.
 
 ## Evidence and verification
@@ -154,7 +160,7 @@ Saved workspace files use the `.saq` extension. The file is JSON with a small fo
 
 ## Upload rules
 
-Before preparing a GitHub upload or deleting generated files, follow `UPLOAD_RULES.md`. It defines the local-only `github uploading/` staging folder and the ZIP backup workflow.
+Source packages use the local-only `github uploading/` staging folder and the ZIP backup workflow below. Keep existing recovery archives when preparing a new package.
 
 Create a source package from the current working files, including new and uncommitted source:
 
@@ -211,7 +217,6 @@ src/
   lib/api.ts     Frontend API client
 ```
 
-## Next build targets
+## Remaining simulator integration
 
-- Live mission upload/download flows from the telemetry panel.
-- Simulator-specific sensor topic adapters for deeper Gazebo failure injection.
+Gazebo failure helpers currently report scenario configuration. Live sensor-topic adapters still need real vehicle/sensor models, topic bindings, and verification against an installed Classic or gz-sim toolchain. Configuration logs are not evidence that sensor failure or wind physics were injected.

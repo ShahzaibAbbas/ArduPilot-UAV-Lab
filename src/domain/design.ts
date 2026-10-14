@@ -7,6 +7,7 @@ export type SignalKind =
   | "i2c"
   | "can"
   | "analog"
+  | "gpio"
   | "video"
   | "mount"
   | "telemetry";
@@ -108,9 +109,33 @@ export interface ComponentNodeData extends Record<string, unknown> {
   label: string;
   properties: Record<string, string | number | boolean>;
   health?: "ok" | "warning" | "error";
+  firmware?: FirmwareAttachmentReference;
 }
 
-export type DesignNode = Node<ComponentNodeData, "componentNode">;
+export interface ThreeVector3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ThreeTransform {
+  position: ThreeVector3;
+  rotation: ThreeVector3;
+  scale: ThreeVector3;
+}
+
+export interface FirmwareAttachmentReference {
+  id: string;
+  originalName: string;
+  sha256: string;
+  byteSize: number;
+  uploadedAt: string;
+  compatibilityStatus: "compatible" | "review" | "incompatible" | "unknown";
+}
+
+export type DesignNode = Node<ComponentNodeData, "componentNode"> & {
+  presentation3d?: ThreeTransform;
+};
 export type DesignEdge = Edge<{ signal?: SignalKind; issues?: string[] }>;
 
 export interface GcsTargetSettings {
@@ -132,6 +157,11 @@ export interface SimulationSettings {
   physicsBackend: "sitl" | "json";
   jsonHost: string;
   simVehiclePath: string;
+  sitlHeadless?: boolean;
+  sitlRebuild?: boolean;
+  /** Pass sim_vehicle.py's wipe EEPROM option on the next launch only. */
+  sitlWipeOnLaunch?: boolean;
+  labTelemetryPort?: number;
   speedup: number;
   locationName: string;
   testScenario: "nominal" | "wind-gust" | "low-battery" | "gps-denied" | "payload-endurance" | "sensor-failure";
@@ -140,14 +170,37 @@ export interface SimulationSettings {
   windGustMps: number;
   batteryLowPercent: number;
   batteryCriticalPercent: number;
-  batteryFailsafeAction: "Warn" | "Land" | "RTL" | "SmartRTL";
-  batteryCriticalAction: "Land" | "RTL" | "SmartRTL" | "Terminate";
+  batteryFailsafeAction: "Warn" | "Land" | "RTL" | "SmartRTL" | "Hold";
+  batteryCriticalAction: "Land" | "RTL" | "SmartRTL" | "Hold" | "Terminate";
   swarmCount: number;
   swarmLayout: "line" | "grid" | "circle";
   swarmSpacingM: number;
   gcsHost: string;
   gcsPort: number;
   gcsTargets: GcsTargetSettings[];
+  gcsTcpPort?: number;
+}
+
+export interface ThreeWorkspaceSettings {
+  showLabels: boolean;
+  showWires: boolean;
+  isolateSelection: boolean;
+  reducedMotion: boolean;
+}
+
+export interface TraceWorkspaceSettings {
+  direction: "all" | "rx" | "tx";
+  protocol: "all" | "MAVLink1" | "MAVLink2";
+  systemId: string;
+  componentId: string;
+  messageId: string;
+  text: string;
+}
+
+export interface LabWorkspaceSettings {
+  viewMode: "2d" | "3d";
+  three: ThreeWorkspaceSettings;
+  trace: TraceWorkspaceSettings;
 }
 
 export interface UavDesign {
@@ -156,6 +209,7 @@ export interface UavDesign {
   nodes: DesignNode[];
   edges: DesignEdge[];
   settings: SimulationSettings;
+  lab?: LabWorkspaceSettings;
   management?: EngineeringManagementState;
   updatedAt?: string;
 }
@@ -171,6 +225,10 @@ export const defaultSettings: SimulationSettings = {
   physicsBackend: "sitl",
   jsonHost: "127.0.0.1",
   simVehiclePath: "",
+  sitlHeadless: true,
+  sitlRebuild: true,
+  sitlWipeOnLaunch: false,
+  labTelemetryPort: 14552,
   speedup: 1,
   locationName: "CMAC",
   testScenario: "nominal",
@@ -190,4 +248,22 @@ export const defaultSettings: SimulationSettings = {
     { id: "qgc", name: "QGroundControl", enabled: true, host: "127.0.0.1", port: 14550 },
     { id: "mission-planner", name: "Mission Planner", enabled: true, host: "127.0.0.1", port: 14551 }
   ]
+};
+
+export const defaultLabSettings: LabWorkspaceSettings = {
+  viewMode: "2d",
+  three: {
+    showLabels: true,
+    showWires: true,
+    isolateSelection: false,
+    reducedMotion: false
+  },
+  trace: {
+    direction: "all",
+    protocol: "all",
+    systemId: "",
+    componentId: "",
+    messageId: "",
+    text: ""
+  }
 };

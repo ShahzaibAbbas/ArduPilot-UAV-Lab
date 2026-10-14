@@ -1,0 +1,48 @@
+{
+  "source": "User-supplied Google Stitch ZIP exports",
+  "date": "2026-10-14",
+  "exports": [
+    {
+      "archive": "stitch_ardupilot_uav_engineering_workbench.zip",
+      "role": "Desktop HCI refinement",
+      "directory": "screen-0",
+      "image_pixels": [
+        1280,
+        984
+      ],
+      "files": {
+        "code.html": "24b562693f60d8d846e287f276c23d74b325c3bfa62943c5af9228d7c1017b6b",
+        "DESIGN.md": "be4d67bb8b4310f8375eb39002b8ce3dc3c05790887560050c31fdbba64c1d97",
+        "screen.png": "d3771434a72da296953bc40fdb67ee97beeac25eea6747b539847c84b70514a6"
+      }
+    },
+    {
+      "archive": "stitch_ardupilot_uav_engineering_workbench (1).zip",
+      "role": "Earlier dark desktop variant",
+      "directory": "screen-1",
+      "image_pixels": [
+        1600,
+        1280
+      ],
+      "files": {
+        "code.html": "aaecae75a5d1838ce5f3efc708b81689aa5c6620249364798a9b31da5476c7e8",
+        "DESIGN.md": "be4d67bb8b4310f8375eb39002b8ce3dc3c05790887560050c31fdbba64c1d97",
+        "screen.png": "ae0ac0db356bcc8c6314cb1987d5e41251231e47339266bbedc201155b818919"
+      }
+    },
+    {
+      "archive": "stitch_ardupilot_uav_engineering_workbench (2).zip",
+      "role": "Mobile workbench",
+      "directory": "screen-2",
+      "image_pixels": [
+        459,
+        1600
+      ],
+      "files": {
+        "code.html": "ded32ca144ce0d57903a57eaeaa90c304336479b85b37846818ab3a3b7c74648",
+        "DESIGN.md": "be4d67bb8b4310f8375eb39002b8ce3dc3c05790887560050c31fdbba64c1d97",
+        "screen.png": "9112633e5a54b5f6ade4e55bc14088724f8e21a14738dac7eec496a41ccbec58"
+      }
+    }
+  ]
+}

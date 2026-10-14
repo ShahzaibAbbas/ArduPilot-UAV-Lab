@@ -867,6 +867,7 @@
 
 .firmware-dropzone button,
 .firmware-actions button,
+.firmware-refresh,
 .sitl-link-card button,
 .trace-actions button,
 .trace-stepper button {
@@ -2304,7 +2305,8 @@ button:disabled {
   box-shadow: 0 0 0 7px rgba(19, 138, 131, 0.08);
 }
 
-.object-shape-telemetry-radio .shape-plate {
+.object-shape-telemetry-radio .shape-plate,
+.object-shape-virtual-telemetry .shape-plate {
   width: 34px;
   height: 28px;
   border-radius: 7px;
@@ -2312,7 +2314,8 @@ button:disabled {
   border-color: rgba(45, 108, 223, 0.35);
 }
 
-.object-shape-telemetry-radio .shape-arm-a {
+.object-shape-telemetry-radio .shape-arm-a,
+.object-shape-virtual-telemetry .shape-arm-a {
   left: 42px;
   top: 1px;
   width: 4px;
@@ -2956,6 +2959,57 @@ button:disabled {
 .product-spec-editor .field:last-child {
   margin-bottom: 0;
 }
+
+.battery-details {
+  display: grid;
+  gap: 9px;
+  margin: 4px 0 14px;
+  padding: 10px;
+  border: 1px solid #8fc8bf;
+  border-radius: 8px;
+  background: #f1fbf8;
+}
+
+.battery-details-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.battery-details-heading h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.battery-metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.battery-metric-grid > div {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #cce4df;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.battery-metric-grid small,
+.battery-metric-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.battery-metric-grid small { color: var(--muted); font-size: 10px; }
+.battery-metric-grid strong { margin-top: 3px; color: var(--text); font-size: 12px; }
+.battery-details .field-help { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.battery-details > a { color: var(--teal); font-size: 12px; font-weight: 700; }
+.battery-issues { margin: 0; padding-left: 18px; color: #97512f; font-size: 11px; line-height: 1.4; }
 
 .connection-route-card {
   display: grid;
@@ -3689,6 +3743,57 @@ button:disabled {
 .issue-review-dialog footer { display: flex; justify-content: flex-end; padding: 16px 24px; border-top: 1px solid var(--line); }
 .issue-resolved { color: #267149; }
 .issue-review-dialog button:focus-visible, .validation-issue button:focus-visible, .check-review-action:focus-visible { outline: 3px solid #409ad1; outline-offset: 3px; }
+
+/* Live MAVLink safety window. It intentionally uses a native modal so a
+   severity message remains visible while the operator decides what to do. */
+.telemetry-alert-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  border: 1px solid #e3b8a8;
+  border-radius: 16px;
+  color: var(--text);
+  background: #fff;
+  box-shadow: 0 24px 90px #10253d55;
+}
+.telemetry-alert-dialog::backdrop { background: #182838a8; backdrop-filter: blur(3px); }
+.telemetry-alert-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 19px 22px; border-bottom: 1px solid #f0d8ce; }
+.telemetry-alert-dialog header.critical { background: #fff3f0; border-bottom-color: #f2c5ba; }
+.telemetry-alert-dialog header.warning { background: #fffaf0; border-bottom-color: #f1dfb6; }
+.telemetry-alert-heading { display: flex; align-items: flex-start; gap: 11px; }
+.telemetry-alert-heading > svg { flex-shrink: 0; margin-top: 4px; color: #b5442f; }
+.telemetry-alert-dialog header.warning .telemetry-alert-heading > svg { color: #a66b14; }
+.telemetry-alert-dialog header small { color: #7e6a68; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.telemetry-alert-dialog h2 { margin: 5px 0 0; color: #592d29; font-size: 20px; line-height: 1.2; }
+.telemetry-alert-dialog header.warning h2 { color: #604817; }
+.telemetry-alert-dialog .icon-button { flex-shrink: 0; border: 0; background: transparent; color: #7c8a93; cursor: pointer; }
+.telemetry-alert-body { display: grid; gap: 17px; padding: 20px 22px; overflow-y: auto; }
+.telemetry-alert-detail { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: #5e6d76; font-size: 12px; font-weight: 700; line-height: 1.45; }
+.telemetry-alert-detail svg { flex-shrink: 0; margin-top: 1px; color: #b5442f; }
+.telemetry-alert-body section { display: grid; gap: 6px; }
+.telemetry-alert-body h3 { display: flex; align-items: center; gap: 6px; margin: 0; color: #24465a; font-size: 13px; }
+.telemetry-alert-body h3 svg { color: #147f74; }
+.telemetry-alert-body section p { margin: 0; color: #607486; font-size: 12px; line-height: 1.6; }
+.telemetry-alert-steps { display: grid; gap: 5px; margin: 4px 0 0 18px; padding: 0; color: #637685; font-size: 11px; line-height: 1.5; }
+.telemetry-alert-action { display: flex !important; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid #cde1dd; border-radius: 9px; background: #f2faf8; }
+.telemetry-alert-action > div { display: grid; gap: 4px; min-width: 0; }
+.telemetry-alert-action strong { color: #1d675e; font-size: 12px; }
+.telemetry-alert-action span { color: #65817f; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.telemetry-alert-action button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 6px; min-height: 34px; padding: 0 11px; border: 0; border-radius: 6px; background: #0b7f78; color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
+.telemetry-alert-action button:disabled { cursor: not-allowed; opacity: .48; }
+.telemetry-alert-error, .telemetry-alert-success { padding: 9px 11px; border-radius: 6px; font-size: 11px !important; line-height: 1.45 !important; }
+.telemetry-alert-error { border-left: 3px solid #bf4938; background: #fff1ee; color: #994033 !important; }
+.telemetry-alert-success { border-left: 3px solid #148b73; background: #edf9f3; color: #216b57 !important; }
+.telemetry-alert-link { display: inline-flex; align-items: center; gap: 5px; width: fit-content; padding: 0; border: 0; background: transparent; color: #0b7f78; font-size: 11px; font-weight: 700; cursor: pointer; }
+.telemetry-alert-dialog footer { display: flex; justify-content: flex-end; padding: 13px 22px; border-top: 1px solid var(--line); }
+.telemetry-alert-dialog footer button { padding: 7px 10px; border: 1px solid #cbd5df; border-radius: 6px; background: #fff; color: #526b79; font-size: 11px; font-weight: 700; cursor: pointer; }
+.telemetry-alert-battery { position: relative; display: inline-block; flex-shrink: 0; width: 17px; height: 21px; margin-top: 2px; border: 2px solid #b5442f; border-radius: 3px; }
+.telemetry-alert-battery::before { content: ""; position: absolute; top: -5px; left: 4px; width: 6px; height: 3px; border-radius: 2px 2px 0 0; background: #b5442f; }
+.telemetry-alert-battery span { position: absolute; right: 2px; bottom: 2px; left: 2px; height: 45%; border-radius: 1px; background: #d26a45; }
+@media (max-width: 560px) {
+  .telemetry-alert-action { align-items: stretch; flex-direction: column; }
+  .telemetry-alert-action button { width: 100%; }
+}
 
 .status-pill {
   display: inline-flex;

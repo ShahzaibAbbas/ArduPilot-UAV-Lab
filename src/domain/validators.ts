@@ -1,6 +1,7 @@
 import type { DesignEdge, DesignNode, SignalKind, SimulationSettings } from "./design";
-import { getPort } from "./componentCatalog";
-import { airframeLabel, rotorCountForFrame } from "./airframes";
+import { componentCatalog, getPort } from "./componentCatalog";
+import { airframeLabel, propulsionMotorCountForFrame } from "./airframes";
+import { batteryMetrics } from "../../server/batteryModel.js";
 
 export type ValidationSeverity = "error" | "warning" | "info";
 
@@ -11,6 +12,7 @@ export interface ValidationIssue {
   message: string;
   nodeIds?: string[];
   edgeIds?: string[];
+  portIds?: { nodeId: string; portId: string }[];
 }
 
 export interface ValidationResult {
@@ -19,15 +21,56 @@ export interface ValidationResult {
   counts: Record<ValidationSeverity, number>;
 }
 
+/** Compare each pack only with hardware on its own valid power path. */
+export function batteryHardwareIssues(nodes: readonly DesignNode[], edges: readonly DesignEdge[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (const battery of nodes.filter((node) => node.data.componentType === "battery")) {
+    const metrics = batteryMetrics(battery.data.properties);
+    const reached = new Set([battery.id]);
+    const queue = [battery.id];
+    while (queue.length) {
+      const sourceId = queue.shift()!;
+      for (const edge of edges) {
+        if (edge.source !== sourceId || reached.has(edge.target)) continue;
+        const source = byId.get(edge.source);
+        const target = byId.get(edge.target);
+        if (!source || !target || getPort(source.data.componentType, edge.sourceHandle)?.kind !== "power" || getPort(target.data.componentType, edge.targetHandle)?.kind !== "power") continue;
+        reached.add(target.id);
+        queue.push(target.id);
+      }
+    }
+    const supplied = nodes.filter((node) => reached.has(node.id));
+    for (const device of supplied) {
+      const type = device.data.componentType;
+      const maxCells = Number(device.data.properties[type === "power-module" ? "inputCellsMax" : "maxCells"] ?? 0);
+      if ((type === "power-module" || type === "esc") && maxCells > 0 && metrics.seriesCells > maxCells) {
+        issues.push({
+          id: `battery-${battery.id}-${device.id}-${type === "power-module" ? "voltage" : "cells"}`,
+          severity: "error", title: type === "power-module" ? "Power module voltage exceeded" : "ESC battery voltage exceeded",
+          message: `${device.data.label} is rated to ${maxCells}S but ${battery.data.label} is ${metrics.seriesCells}S (${metrics.fullVoltageV.toFixed(1)} V full).`,
+          nodeIds: [battery.id, device.id]
+        });
+      }
+      const voltageRating = Number(device.data.properties.voltageRating ?? 0);
+      if (type === "fuse" && voltageRating > 0 && metrics.fullVoltageV > voltageRating) {
+        issues.push({ id: `battery-${battery.id}-${device.id}-voltage`, severity: "error", title: "Protection voltage exceeded", message: `${battery.data.label} reaches ${metrics.fullVoltageV.toFixed(1)} V full, above ${device.data.label}'s ${voltageRating} V rating.`, nodeIds: [battery.id, device.id] });
+      }
+    }
+    const escs = supplied.filter((node) => node.data.componentType === "esc");
+    const explicitEscCurrent = escs.reduce((sum, esc) => {
+      const rating = Number(esc.data.properties.maxAmps ?? 0);
+      return sum + (Number.isFinite(rating) ? Math.max(0, rating) : 0);
+    }, 0);
+    if (metrics.continuousCurrentA > 0 && explicitEscCurrent > metrics.continuousCurrentA * 1.1) {
+      issues.push({ id: `battery-${battery.id}-propulsion-current`, severity: "warning", title: "Battery current margin is low", message: `${battery.data.label} is rated ${metrics.continuousCurrentA.toFixed(1)} A continuous while connected ESCs total ${explicitEscCurrent.toFixed(1)} A. Check measured propulsion current, duty cycle, wiring, and thermal margin.`, nodeIds: [battery.id, ...escs.map((esc) => esc.id)] });
+    }
+  }
+  return issues;
+}
+
 export function expectedMotorCount(settings: SimulationSettings): number {
-  const frame = settings.frame.toLowerCase();
-  if (settings.vehicle === "Rover") {
-    return 0;
-  }
-  if (settings.vehicle === "ArduPlane" && !frame.includes("quadplane")) {
-    return 1;
-  }
-  return rotorCountForFrame(frame);
+  return propulsionMotorCountForFrame(settings.frame);
 }
 
 function nodesOf(nodes: DesignNode[], type: string) {
@@ -136,6 +179,120 @@ function incompatibleConnectionMessage(source: DesignNode, target: DesignNode, e
   return componentCompatibilityMessage(source.data.componentType, target.data.componentType, edge.sourceHandle, edge.targetHandle);
 }
 
+function compatibleDesignConnections(nodes: readonly DesignNode[], edges: readonly DesignEdge[]): DesignEdge[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  return edges.filter((edge) => {
+    const source = byId.get(edge.source);
+    const target = byId.get(edge.target);
+    if (!source || !target || source.id === target.id) return false;
+    const sourcePort = getPort(source.data.componentType, edge.sourceHandle);
+    const targetPort = getPort(target.data.componentType, edge.targetHandle);
+    return sourcePort?.direction === "output" && targetPort?.direction === "input" &&
+      sourcePort.kind === targetPort.kind && !incompatibleConnectionMessage(source, target, edge);
+  });
+}
+
+function conflictsForConnections(nodes: readonly DesignNode[], edges: readonly DesignEdge[]): ValidationIssue[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const inputs = new Map<string, DesignEdge[]>();
+  const escOutputs = new Map<string, DesignEdge[]>();
+  for (const edge of edges) {
+    const target = byId.get(edge.target)!;
+    const port = getPort(target.data.componentType, edge.targetHandle)!;
+    // I2C/CAN are shared buses; the controller UART handle groups its serial ports.
+    const sharedBus = ["i2c", "can"].includes(port.kind) ||
+      target.data.componentType === "flight-controller" && port.kind === "uart";
+    if (!sharedBus) {
+      const key = JSON.stringify([edge.target, edge.targetHandle]);
+      const connections = inputs.get(key) ?? [];
+      connections.push(edge);
+      inputs.set(key, connections);
+    }
+    if (byId.get(edge.source)?.data.componentType === "esc" && edge.sourceHandle === "power-out") {
+      const connections = escOutputs.get(edge.source) ?? [];
+      connections.push(edge);
+      escOutputs.set(edge.source, connections);
+    }
+  }
+
+  const issues: ValidationIssue[] = [];
+  for (const connections of inputs.values()) {
+    const sources = new Set(connections.map((edge) => JSON.stringify([edge.source, edge.sourceHandle])));
+    if (sources.size <= 1) continue;
+    const { target, targetHandle } = connections[0];
+    issues.push({
+      id: `input-${target}-${targetHandle}-conflict`, severity: "error", title: "Competing input connections",
+      message: `${byId.get(target)!.data.label} (${targetHandle}) has multiple sources. Keep one compatible feed for this input.`,
+      nodeIds: [...new Set([...connections.map((edge) => edge.source), target])],
+      edgeIds: connections.map((edge) => edge.id), portIds: [{ nodeId: target, portId: targetHandle! }]
+    });
+  }
+  for (const [source, connections] of escOutputs) {
+    if (new Set(connections.map((edge) => edge.target)).size <= 1) continue;
+    issues.push({
+      id: `esc-${source}-multiple-motors`, severity: "error", title: "ESC drives multiple motors",
+      message: `${byId.get(source)!.data.label} must drive exactly one motor. Give each motor its own ESC.`,
+      nodeIds: [source, ...new Set(connections.map((edge) => edge.target))],
+      edgeIds: connections.map((edge) => edge.id)
+    });
+  }
+  return issues;
+}
+
+/** Finds graph-level conflicts between otherwise compatible connections. */
+export function connectionConflictIssues(nodes: readonly DesignNode[], edges: readonly DesignEdge[]): ValidationIssue[] {
+  return conflictsForConnections(nodes, compatibleDesignConnections(nodes, edges));
+}
+
+/** Only compatible, unambiguous connections can satisfy wiring and acceptance requirements. */
+export function validDesignConnections(nodes: readonly DesignNode[], edges: readonly DesignEdge[]): DesignEdge[] {
+  const connections = compatibleDesignConnections(nodes, edges);
+  const conflicted = new Set(conflictsForConnections(nodes, connections).flatMap((issue) => issue.edgeIds ?? []));
+  return connections.filter((edge) => !conflicted.has(edge.id));
+}
+
+export function unconnectedRequiredPorts(nodes: readonly DesignNode[], edges: readonly DesignEdge[]) {
+  const connections = validDesignConnections(nodes, edges);
+  return nodes.flatMap((node) => {
+    const ports = componentCatalog.find((definition) => definition.type === node.data.componentType)?.ports ?? [];
+    return ports.filter((port) => port.required && !connections.some((edge) => port.direction === "input"
+      ? edge.target === node.id && edge.targetHandle === port.id
+      : edge.source === node.id && edge.sourceHandle === port.id
+    )).map((port) => ({ node, port }));
+  });
+}
+
+/** Follows a device's data cable, including a documented harness, to a controller. */
+export function componentHasControllerDataPath(node: DesignNode, edges: readonly DesignEdge[], nodesById: ReadonlyMap<string, DesignNode>) {
+  const dataKinds: SignalKind[] = ["uart", "i2c", "can", "analog", "telemetry"];
+  for (const kind of dataKinds) {
+    const reached = new Set([node.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const edge of edges) {
+        const source = nodesById.get(edge.source);
+        const target = nodesById.get(edge.target);
+        if (!source || !target) continue;
+        const sourcePort = getPort(source.data.componentType, edge.sourceHandle);
+        const targetPort = getPort(target.data.componentType, edge.targetHandle);
+        if (sourcePort?.kind !== kind || targetPort?.kind !== kind ||
+          sourcePort.direction !== "output" || targetPort.direction !== "input" ||
+          incompatibleConnectionMessage(source, target, edge)) continue;
+        const nextId = reached.has(edge.source) ? edge.target : reached.has(edge.target) ? edge.source : undefined;
+        if (!nextId || reached.has(nextId)) continue;
+        const next = nodesById.get(nextId);
+        if (next?.data.componentType === "flight-controller") return true;
+        if (next?.data.componentType === "wiring-harness") {
+          reached.add(nextId);
+          changed = true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 export function validateDesign(
   nodes: DesignNode[],
   edges: DesignEdge[],
@@ -143,6 +300,16 @@ export function validateDesign(
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
   const byId = new Map(nodes.map((node) => [node.id, node]));
+
+  for (const node of nodes) {
+    if (!componentCatalog.some((definition) => definition.type === node.data.componentType)) {
+      issues.push({
+        id: `node-${node.id}-unknown-component`, severity: "error", title: "Unknown component",
+        message: `${node.data.label} uses the unsupported component type ${node.data.componentType}. Replace it with a catalog component.`,
+        nodeIds: [node.id]
+      });
+    }
+  }
 
   for (const edge of edges) {
     const source = byId.get(edge.source);
@@ -162,12 +329,20 @@ export function validateDesign(
     const sourcePort = getPort(source.data.componentType, edge.sourceHandle);
     const targetPort = getPort(target.data.componentType, edge.targetHandle);
 
+    if (source.id === target.id) {
+      issues.push({
+        id: `edge-${edge.id}-self`, severity: "error", title: "Component wired to itself",
+        message: `${source.data.label} cannot supply its own input. Connect it to another component.`,
+        nodeIds: [source.id], edgeIds: [edge.id]
+      });
+    }
+
     if (!sourcePort || !targetPort) {
       issues.push({
         id: `edge-${edge.id}-missing-port`,
         severity: "error",
         title: "Unknown port",
-        message: `${source.data.label} to ${target.data.label} uses a port that is not defined.`,
+        message: `${source.data.label} (${edge.sourceHandle ?? "no source port"}) to ${target.data.label} (${edge.targetHandle ?? "no target port"}) uses a port that is not defined.`,
         nodeIds: [source.id, target.id],
         edgeIds: [edge.id]
       });
@@ -209,6 +384,9 @@ export function validateDesign(
     }
   }
 
+  issues.push(...connectionConflictIssues(nodes, edges));
+  // Keep invalid wires visible above, but never count them as a repaired path.
+  edges = validDesignConnections(nodes, edges);
   const flightControllers = nodesOf(nodes, "flight-controller");
   const frames = nodesOf(nodes, "frame");
   const batteries = nodesOf(nodes, "battery");
@@ -252,6 +430,21 @@ export function validateDesign(
     });
   }
 
+  for (const battery of batteries) {
+    for (const issue of batteryMetrics(battery.data.properties).issues) {
+      issues.push({
+        id: `battery-${battery.id}-${issue.key}`,
+        severity: issue.severity,
+        title: issue.severity === "error" ? "Battery specification invalid" : "Battery specification review",
+        message: `${battery.data.label}: ${issue.message}`,
+        nodeIds: [battery.id]
+      });
+    }
+  }
+
+  // Catch the common integration errors that graph topology alone cannot see.
+  issues.push(...batteryHardwareIssues(nodes, edges));
+
   if (powerModules.length === 0) {
     issues.push({
       id: "missing-power-module",
@@ -261,13 +454,24 @@ export function validateDesign(
     });
   }
 
-  if (settings.batteryCriticalPercent >= settings.batteryLowPercent) {
+  const lowPercent = Number(settings.batteryLowPercent);
+  const criticalPercent = Number(settings.batteryCriticalPercent);
+  if (!Number.isFinite(lowPercent) || !Number.isFinite(criticalPercent) || criticalPercent <= 0 || lowPercent > 100 || lowPercent <= criticalPercent) {
     issues.push({
       id: "battery-failsafe-threshold-order",
       severity: "error",
-      title: "Battery thresholds reversed",
-      message: "Critical battery percent must be lower than the low battery percent."
+      title: "Battery thresholds invalid",
+      message: "Battery reserve thresholds must be finite numbers with 0 < critical < low ≤ 100%."
     });
+  }
+
+  const lowActions = settings.vehicle === "Rover" ? ["Warn", "RTL", "Hold", "SmartRTL"] : settings.vehicle === "ArduPlane" ? ["Warn", "RTL", "Land"] : ["Warn", "Land", "RTL", "SmartRTL"];
+  const criticalActions = settings.vehicle === "Rover" ? ["RTL", "Hold", "SmartRTL", "Terminate"] : settings.vehicle === "ArduPlane" ? ["RTL", "Land", "Terminate"] : ["Land", "RTL", "SmartRTL", "Terminate"];
+  if (!lowActions.includes(settings.batteryFailsafeAction)) {
+    issues.push({ id: "battery-low-action-unsupported", severity: "error", title: "Low battery action unsupported", message: `${settings.vehicle} does not support ${settings.batteryFailsafeAction} as a low-battery action.`, nodeIds: [] });
+  }
+  if (!criticalActions.includes(settings.batteryCriticalAction)) {
+    issues.push({ id: "battery-critical-action-unsupported", severity: "error", title: "Critical battery action unsupported", message: `${settings.vehicle} does not support ${settings.batteryCriticalAction} as a critical action.`, nodeIds: [] });
   }
 
   if (settings.batteryFailsafeAction === "Warn" && settings.testScenario === "low-battery") {
@@ -289,18 +493,17 @@ export function validateDesign(
     });
   }
 
-  if (
-    powerModules.length > 0 &&
-    flightControllers.length > 0 &&
-    !hasConnection(edges, nodes, "power-module", "flight-controller", "power-in")
-  ) {
-    issues.push({
-      id: "fc-power-missing",
-      severity: "error",
-      title: "Flight controller power missing",
-      message: "Connect regulated power from the power module to the flight controller.",
-      nodeIds: [powerModules[0].id, flightControllers[0].id]
-    });
+  for (const controller of flightControllers) {
+    if (!hasIncoming(edges, controller.id, "power-in")) {
+      issues.push({
+        id: flightControllers.length === 1 ? "fc-power-missing" : `fc-${controller.id}-power-missing`,
+        severity: "error",
+        title: "Flight controller power missing",
+        message: `${controller.data.label} needs a regulated supply connected to its PWR input (power-in).`,
+        nodeIds: [controller.id],
+        portIds: [{ nodeId: controller.id, portId: "power-in" }]
+      });
+    }
   }
 
   if (
@@ -376,16 +579,18 @@ export function validateDesign(
         severity: "error",
         title: "ESC signal missing",
         message: `${esc.data.label} needs a PWM signal from the flight controller.`,
-        nodeIds: [esc.id]
+        nodeIds: [esc.id],
+        portIds: [{ nodeId: esc.id, portId: "pwm-in" }]
       });
     }
     if (!hasIncoming(edges, esc.id, "power-in")) {
       issues.push({
         id: `esc-${esc.id}-power`,
-        severity: "warning",
+        severity: "error",
         title: "ESC power missing",
         message: `${esc.data.label} needs main battery power.`,
-        nodeIds: [esc.id]
+        nodeIds: [esc.id],
+        portIds: [{ nodeId: esc.id, portId: "power-in" }]
       });
     }
   }
@@ -397,7 +602,8 @@ export function validateDesign(
         severity: "error",
         title: "Motor not driven",
         message: `${motor.data.label} needs power from an ESC output.`,
-        nodeIds: [motor.id]
+        nodeIds: [motor.id],
+        portIds: [{ nodeId: motor.id, portId: "power-in" }]
       });
     }
     if (!hasIncoming(edges, motor.id, "mount-in", "frame", nodes)) {
@@ -411,6 +617,19 @@ export function validateDesign(
     }
   }
 
+  for (const servo of nodesOf(nodes, "servo")) {
+    const requiredConnections = [
+      { handle: "pwm-in", source: "flight-controller", title: "Servo command missing", message: "needs a PWM command from the flight controller", severity: "error" as const },
+      { handle: "power-in", source: undefined, title: "Servo power missing", message: "needs a supply matching its voltage rating", severity: "error" as const },
+      { handle: "mount-in", source: "frame", title: "Servo mount missing", message: "needs a mount on its airframe or chassis", severity: "warning" as const }
+    ];
+    for (const connection of requiredConnections) {
+      if (!hasIncoming(edges, servo.id, connection.handle, connection.source, nodes)) {
+        issues.push({ id: `servo-${servo.id}-${connection.handle}`, severity: connection.severity, title: connection.title, message: `${servo.data.label} ${connection.message}.`, nodeIds: [servo.id], portIds: [{ nodeId: servo.id, portId: connection.handle }] });
+      }
+    }
+  }
+
   if (gps.length === 0) {
     issues.push({
       id: "gps-missing",
@@ -418,14 +637,17 @@ export function validateDesign(
       title: "GPS missing",
       message: "Most autonomous ArduPilot missions need a GPS source."
     });
-  } else if (flightControllers.length > 0 && !hasConnection(edges, nodes, "gps", "flight-controller", "uart-in")) {
-    issues.push({
-      id: "gps-not-wired",
-      severity: "warning",
-      title: "GPS not wired",
-      message: "Connect GPS UART output to the flight controller UART input.",
-      nodeIds: [gps[0].id, flightControllers[0].id]
-    });
+  }
+  for (const sensor of [...gps, ...compass, ...rangefinders, ...airspeedSensors, ...opticalFlowSensors]) {
+    if (flightControllers.length > 0 && !componentHasControllerDataPath(sensor, edges, byId)) {
+      issues.push({
+        id: sensor.data.componentType === "gps" && gps.length === 1 ? "gps-not-wired" : `sensor-${sensor.id}-data`,
+        severity: "warning",
+        title: "Sensor data link missing",
+        message: `${sensor.data.label} needs a compatible data path to the flight controller, directly or through a wiring harness.`,
+        nodeIds: [sensor.id]
+      });
+    }
   }
 
   if (compass.length === 0 && settings.vehicle !== "Rover") {
@@ -519,21 +741,35 @@ export function validateDesign(
     }
   }
 
-  if (companionComputers.length > 0 && !hasConnection(edges, nodes, "flight-controller", "companion-computer", "uart-in")) {
-    issues.push({
-      id: "companion-link-missing",
+  for (const companion of companionComputers) {
+    if (!componentHasControllerDataPath(companion, edges, byId)) issues.push({
+      id: companionComputers.length === 1 ? "companion-link-missing" : `companion-${companion.id}-link-missing`,
       severity: "info",
       title: "Companion MAVLink link missing",
-      message: "Connect the flight-controller UART output to the companion computer UART input for onboard autonomy."
+      message: `${companion.data.label} needs a UART data path to the flight controller, directly or through a wiring harness.`,
+      nodeIds: [companion.id]
     });
   }
 
-  if (adsbRemoteId.length > 0 && !hasConnection(edges, nodes, "adsb-remote-id", "flight-controller")) {
-    issues.push({
-      id: "traffic-module-link-missing",
+  for (const traffic of adsbRemoteId) {
+    if (!componentHasControllerDataPath(traffic, edges, byId)) issues.push({
+      id: adsbRemoteId.length === 1 ? "traffic-module-link-missing" : `traffic-${traffic.id}-link-missing`,
       severity: "info",
       title: "Traffic module not wired",
-      message: "Connect ADSB or Remote ID modules to the flight controller by UART or CAN."
+      message: `${traffic.data.label} needs a UART or CAN data path to the flight controller.`,
+      nodeIds: [traffic.id]
+    });
+  }
+
+  for (const { node, port } of unconnectedRequiredPorts(nodes, edges)) {
+    if (issues.some((issue) => issue.portIds?.some((location) => location.nodeId === node.id && location.portId === port.id))) continue;
+    issues.push({
+      id: `required-${node.id}-${port.id}`,
+      severity: "error",
+      title: `Required ${port.kind} ${port.direction} missing`,
+      message: `${node.data.label} has no valid connection at ${port.label} (${port.id}). Connect a compatible ${port.direction === "input" ? "output to this input" : "input to this output"}.`,
+      nodeIds: [node.id],
+      portIds: [{ nodeId: node.id, portId: port.id }]
     });
   }
 

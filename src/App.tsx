@@ -9,7 +9,6 @@ import {
   Handle,
   MarkerType,
   MiniMap,
-  Panel,
   Position,
   ReactFlow,
   reconnectEdge,
@@ -25,6 +24,8 @@ import { SitlConsolePanel } from "./components/SitlConsolePanel";
 import { AirframeSilhouette } from "./components/AirframeSilhouette";
 import { IssueReviewDialog, ValidationIssueList, type ReviewIssue, type IssueAutoFixAction, type IssueLocation } from "./components/IssueReview";
 import { autoWireSuggestions } from "./domain/autoWire";
+import { MAX_MISSION_FILE_BYTES, missionDistanceKm, parseMissionText } from "../server/missionFiles.js";
+import { batteryMetrics } from "../server/batteryModel.js";
 import {
   Anchor,
   AlertTriangle,
@@ -47,6 +48,7 @@ import {
   GitBranch,
   Link2,
   MapPin,
+  Menu,
   Pencil,
   Play,
   Plus,
@@ -109,12 +111,14 @@ import {
   type WorkflowStage
 } from "./components/LabWorkspaceChrome";
 import { NewMissionWizard } from "./components/NewMissionWizard";
-import { WorkbenchNavigation, type WorkbenchTab } from "./components/WorkbenchNavigation";
+import { WorkbenchNavigation, workbenchToolLabels, type WorkbenchTab } from "./components/WorkbenchNavigation";
 import { WorkspaceFilesPanel } from "./components/WorkspaceFilesPanel";
 import { ConnectionsPanel } from "./components/ConnectionsPanel";
 import { WorkspaceActions } from "./components/WorkspaceActions";
 import { FirmwareLab } from "./components/firmware/FirmwareLab";
 import { CompanionComputerPanel } from "./components/CompanionComputerPanel";
+import { BatteryDetails } from "./components/BatteryDetails";
+import { TelemetryAlertDialog } from "./components/TelemetryAlertDialog";
 import { GcsConnectionGuide } from "./components/GcsConnectionGuide";
 import { PacketTracePanel } from "./components/trace/PacketTracePanel";
 import { normalizeThreeTransform } from "./domain/threePresentation";
@@ -250,6 +254,7 @@ interface WorkspaceHistoryEntry {
 }
 
 type SaveTextResult = "saved" | "downloaded" | "cancelled";
+type ImportedMission = { text: string; name: string; itemCount: number; distanceKm: number | null };
 
 type NativeFileWritable = {
   write: (data: Blob) => Promise<void>;
@@ -374,48 +379,6 @@ async function saveGeneratedTextToUserFile(
   const content = await createContent();
   downloadText(fileName, content, mimeType);
   return "downloaded";
-}
-
-function distanceKmBetween(left: { lat: number; lon: number }, right: { lat: number; lon: number }) {
-  const earthRadiusKm = 6371;
-  const latA = (left.lat * Math.PI) / 180;
-  const latB = (right.lat * Math.PI) / 180;
-  const deltaLat = ((right.lat - left.lat) * Math.PI) / 180;
-  const deltaLon = ((right.lon - left.lon) * Math.PI) / 180;
-  const a =
-    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-    Math.cos(latA) * Math.cos(latB) * Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
-  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function missionDistanceFromText(content: string) {
-  const waypoints: Array<{ lat: number; lon: number }> = [];
-  const lines = content.split(/\r?\n/);
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("QGC") || trimmed.startsWith("#")) {
-      continue;
-    }
-
-    const columns = trimmed.split(/\s+/);
-    if (columns.length < 11) {
-      continue;
-    }
-
-    const command = Number(columns[3]);
-    const lat = Number(columns[8]);
-    const lon = Number(columns[9]);
-    if ([16, 22, 82].includes(command) && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
-      waypoints.push({ lat, lon });
-    }
-  }
-
-  if (waypoints.length < 2) {
-    return 0;
-  }
-
-  return waypoints.slice(1).reduce((sum, waypoint, index) => sum + distanceKmBetween(waypoints[index], waypoint), 0);
 }
 
 function designFromState(
@@ -675,6 +638,7 @@ function propertyInput(
       type={property.type === "number" ? "number" : "text"}
       min={property.min}
       max={property.max}
+      step={property.type === "number" ? "any" : undefined}
       value={String(value)}
       onChange={(event) => onChange(property.type === "number" ? Number(event.target.value) : event.target.value)}
     />
@@ -897,12 +861,23 @@ function targetDefaults(settings: SimulationSettings): GcsTargetSettings[] {
 
 function settingsWithDefaults(settings?: Partial<SimulationSettings>): SimulationSettings {
   const merged = { ...defaultSettings, ...(settings ?? {}) } as SimulationSettings;
+  const vehicle = vehicleForAirframe(merged.frame);
+  const lowAction = vehicle === "Rover" && merged.batteryFailsafeAction === "Land" ? "Hold" : merged.batteryFailsafeAction;
+  const criticalAction = vehicle === "Rover" && merged.batteryCriticalAction === "Land" ? "Hold" : merged.batteryCriticalAction;
   return {
     ...merged,
     frame: normalizeAirframeValue(merged.frame),
-    vehicle: vehicleForAirframe(merged.frame),
+    vehicle,
+    batteryFailsafeAction: lowAction,
+    batteryCriticalAction: criticalAction,
     gcsTargets: targetDefaults(merged).map((target) => ({ ...target }))
   };
+}
+
+function batteryActionOptions(vehicle: SimulationSettings["vehicle"], critical: boolean) {
+  if (vehicle === "Rover") return critical ? ["RTL", "Hold", "SmartRTL", "Terminate"] : ["Warn", "RTL", "Hold", "SmartRTL"];
+  if (vehicle === "ArduPlane") return critical ? ["RTL", "Land", "Terminate"] : ["Warn", "RTL", "Land"];
+  return critical ? ["Land", "RTL", "SmartRTL", "Terminate"] : ["Warn", "Land", "RTL", "SmartRTL"];
 }
 
 function normalizeFirmwareReference(value: unknown): DesignNode["data"]["firmware"] {
@@ -1048,6 +1023,7 @@ const buildGuideSteps: BuildGuideStep[] = [
   { componentType: "airspeed-sensor", placement: "Place in clean airflow for fixed-wing or wind-heavy tests.", optional: true, target: singleComponentTarget },
   { componentType: "optical-flow", placement: "Mount downward with a rangefinder for GPS-denied hover tests.", optional: true, target: singleComponentTarget },
   { componentType: "telemetry-radio", placement: "Place at the right comms side and connect by UART.", target: singleComponentTarget },
+  { componentType: "virtual-telemetry", placement: "Place near the communications path and connect MAVLink to the flight controller.", target: singleComponentTarget },
   { componentType: "companion-computer", placement: "Place near the FC for a short MAVLink UART and payload data path.", optional: true, target: singleComponentTarget },
   { componentType: "adsb-remote-id", placement: "Place with comms hardware when traffic awareness or broadcast ID is needed.", optional: true, target: singleComponentTarget },
   { componentType: "rangefinder", placement: "Place on the lower sensor side for altitude or obstacle data.", optional: true, target: singleComponentTarget },
@@ -1252,11 +1228,17 @@ interface MassEstimate {
 interface BatteryEstimate {
   label: string;
   cells: number;
+  parallelCells: number;
+  chemistry: string;
   capacityAh: number;
   nominalVoltage: number;
+  fullVoltage: number;
   energyWh: number;
   usableWh: number;
   maxCurrentA: number;
+  burstCurrentA: number;
+  massG: number;
+  massSource: "spec" | "estimated";
 }
 
 interface PerformanceEstimate {
@@ -1308,7 +1290,8 @@ const estimatedMassByType: Record<string, number> = {
   parachute: 180,
   "power-module": 26,
   rangefinder: 18,
-  "telemetry-radio": 22
+  "telemetry-radio": 22,
+  "virtual-telemetry": 8
 };
 
 function finiteNumber(value: unknown, fallback = 0) {
@@ -1353,14 +1336,13 @@ function estimateMass(node: DesignNode): MassEstimate {
   }
 
   if (node.data.componentType === "battery") {
-    const cells = propertyNumber(node, "cells", 4);
-    const capacityMah = propertyNumber(node, "capacityMah", 5200);
+    const metrics = batteryMetrics(node.data.properties);
     return {
       nodeId: node.id,
       label: node.data.label,
       componentType: node.data.componentType,
-      massG: Math.max(80, cells * capacityMah * 0.024),
-      source: "estimated"
+      massG: metrics.massG,
+      source: metrics.massSource
     };
   }
 
@@ -1384,21 +1366,22 @@ function estimateMass(node: DesignNode): MassEstimate {
 }
 
 function estimateBattery(node: DesignNode): BatteryEstimate {
-  const cells = propertyNumber(node, "cells", 4);
-  const capacityAh = propertyNumber(node, "capacityMah", 5200) / 1000;
-  const nominalVoltage = cells * 3.7;
-  const energyWh = nominalVoltage * capacityAh;
-  const usableWh = energyWh * 0.8;
-  const maxCurrentA = capacityAh * propertyNumber(node, "cRating", 25);
+  const metrics = batteryMetrics(node.data.properties);
 
   return {
     label: node.data.label,
-    cells,
-    capacityAh,
-    nominalVoltage,
-    energyWh,
-    usableWh,
-    maxCurrentA
+    cells: metrics.seriesCells,
+    parallelCells: metrics.parallelCells,
+    chemistry: metrics.chemistry,
+    capacityAh: metrics.capacityAh,
+    nominalVoltage: metrics.nominalVoltageV,
+    fullVoltage: metrics.fullVoltageV,
+    energyWh: metrics.energyWh,
+    usableWh: metrics.energyWh * 0.8,
+    maxCurrentA: metrics.continuousCurrentA,
+    burstCurrentA: metrics.burstCurrentA,
+    massG: metrics.massG,
+    massSource: metrics.massSource
   };
 }
 
@@ -1459,27 +1442,41 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
   const motors = nodesByType(nodes, "motor");
   const escs = nodesByType(nodes, "esc");
   const companionPowerW = nodesByType(nodes, "companion-computer").reduce((sum, node) => sum + propertyNumber(node, "powerWatts", 8), 0);
-  const totalThrustG = motors.reduce((sum, motor) => sum + propertyNumber(motor, "thrustGrams", 900), 0);
-  const totalMaxMotorPowerW = motors.reduce((sum, motor) => sum + estimateMotorMaxPower(motor), 0);
+  const motorThrustG = (items: DesignNode[]) => items.reduce((sum, motor) => sum + propertyNumber(motor, "thrustGrams", 900), 0);
+  const motorPowerW = (items: DesignNode[]) => items.reduce((sum, motor) => sum + estimateMotorMaxPower(motor), 0);
+  // Only multirotors and QuadPlane lift motors hover. A fixed-wing cruise motor
+  // normally has thrust below aircraft weight, so hover metrics do not apply to it.
+  const quadPlane = settings.vehicle === "ArduPlane" && normalizeAirframeValue(settings.frame) === "quadplane";
+  const liftMotors = settings.vehicle === "ArduCopter" ? motors
+    : quadPlane ? motors.filter((motor) => motor.data.properties.propulsionRole !== "Cruise") : [];
+  const cruiseMotors = settings.vehicle === "ArduPlane" ? motors.filter((motor) => !liftMotors.includes(motor)) : motors;
+  const totalThrustG = motorThrustG(motors);
+  const liftThrustG = motorThrustG(liftMotors);
+  const cruiseThrustG = motorThrustG(cruiseMotors);
+  const totalMaxMotorPowerW = motorPowerW(motors);
+  const liftMaxMotorPowerW = motorPowerW(liftMotors);
+  const cruiseMaxMotorPowerW = cruiseMotors.length > 0 ? motorPowerW(cruiseMotors) : totalMaxMotorPowerW;
   const totalMassKg = totalMassG / 1000;
   const thrustToWeight = totalMassG > 0 ? totalThrustG / totalMassG : 0;
-  const hoverThrottle = totalThrustG > 0 ? clamp(totalMassG / totalThrustG, 0, 1.4) : 0;
+  const liftThrustToWeight = totalMassG > 0 ? liftThrustG / totalMassG : 0;
+  const cruiseThrustToWeight = totalMassG > 0 ? cruiseThrustG / totalMassG : 0;
+  const hoverThrottle = liftThrustG > 0 ? clamp(totalMassG / liftThrustG, 0, 1.4) : 0;
   const windSpeedMps = clamp(finiteNumber(settings.windSpeedMps, 0), 0, 60);
   const windGustMps = clamp(finiteNumber(settings.windGustMps, 0), 0, 80);
   const windPowerMultiplier =
     settings.vehicle === "Rover" ? 1 : 1 + clamp(windSpeedMps / 24, 0, 0.34) + clamp(Math.max(windGustMps - windSpeedMps, 0) / 26, 0, 0.26);
   const baseHoverPowerW =
-    motors.length > 0 && totalMaxMotorPowerW > 0
-      ? totalMaxMotorPowerW *
+    liftMotors.length > 0 && liftMaxMotorPowerW > 0
+      ? liftMaxMotorPowerW *
           Math.pow(clamp(hoverThrottle, 0.22, 1.15), 1.5) *
           1.12 *
-          (settings.vehicle === "ArduCopter" ? 1 + clamp((windSpeedMps + windGustMps) / 70, 0, 0.22) : 1)
+          (1 + clamp((windSpeedMps + windGustMps) / 70, 0, 0.22))
       : 0;
   const hoverPowerW = baseHoverPowerW > 0 ? baseHoverPowerW + companionPowerW : 0;
 
   const cruisePowerW =
     settings.vehicle === "ArduPlane"
-      ? Math.max(80, totalMassKg * 65, totalMaxMotorPowerW * 0.28) * windPowerMultiplier + companionPowerW
+      ? Math.max(80, totalMassKg * 65, cruiseMaxMotorPowerW * 0.28) * windPowerMultiplier + companionPowerW
       : settings.vehicle === "Rover"
         ? Math.max(24, totalMassKg * 16) + companionPowerW
         : baseHoverPowerW * 0.88 + companionPowerW;
@@ -1487,17 +1484,19 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
   const missionEnduranceMin = usableEnergyWh > 0 && cruisePowerW > 0 ? (usableEnergyWh / cruisePowerW) * 60 : 0;
   const maxSpeedMps =
     settings.vehicle === "ArduPlane"
-      ? clamp(16 + Math.max(thrustToWeight - 0.35, 0) * 14, 12, 34)
+      ? clamp(16 + Math.max(cruiseThrustToWeight - 0.35, 0) * 14, 12, 34)
       : settings.vehicle === "Rover"
         ? clamp(3.5 + Math.max(thrustToWeight, 0) * 0.6, 2, 8)
         : clamp(8 + Math.max(thrustToWeight - 1, 0) * 7, 5, 22);
   const rangeKm = missionEnduranceMin > 0 ? (missionEnduranceMin / 60) * maxSpeedMps * 3.6 : 0;
   const payloadMarginG =
-    settings.vehicle === "ArduPlane"
-      ? Math.max(0, totalThrustG * 0.75 - totalMassG)
-      : settings.vehicle === "Rover"
-        ? Math.max(0, totalMassG * 0.35)
-        : Math.max(0, totalThrustG / 2 - totalMassG);
+    quadPlane
+      ? Math.max(0, liftThrustG / 2 - totalMassG)
+      : settings.vehicle === "ArduPlane"
+        ? Math.max(0, cruiseThrustG * 0.75 - totalMassG)
+        : settings.vehicle === "Rover"
+          ? Math.max(0, totalMassG * 0.35)
+          : Math.max(0, totalThrustG / 2 - totalMassG);
   const missionDistanceKm = Math.max(0, finiteNumber(settings.missionDistanceKm, 0));
   const missionReservePercent = rangeKm > 0 ? ((rangeKm - missionDistanceKm) / rangeKm) * 100 : 0;
   const batteryContinuousCurrentA = batteries.reduce((sum, battery) => sum + battery.maxCurrentA, 0);
@@ -1516,17 +1515,23 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
   if (settings.vehicle !== "Rover" && motors.length === 0) {
     warnings.push("Motor thrust is missing, so propulsion margin cannot be estimated.");
   }
-  if (settings.vehicle !== "Rover" && thrustToWeight > 0 && thrustToWeight < 1.35) {
+  if (settings.vehicle === "ArduCopter" && thrustToWeight > 0 && thrustToWeight < 1.35) {
     warnings.push("Thrust-to-weight is low for reliable takeoff and control authority.");
   }
-  if (hoverThrottle > 0.75) {
+  if (quadPlane && liftThrustToWeight > 0 && liftThrustToWeight < 1.35) {
+    warnings.push("VTOL lift thrust-to-weight is low for reliable hover, transition, and control authority.");
+  }
+  if (settings.vehicle === "ArduPlane" && cruiseThrustToWeight > 0 && cruiseThrustToWeight < 0.3) {
+    warnings.push("Cruise thrust-to-weight is low for a reliable takeoff and climb.");
+  }
+  if (liftMotors.length > 0 && hoverThrottle > 0.75) {
     warnings.push("Estimated hover throttle is high; endurance and control margin will be limited.");
   }
   if (escs.length < motors.length) {
     warnings.push("There are fewer ESCs than motors, so propulsion hardware is incomplete.");
   }
   if (batteryContinuousCurrentA > 0 && estimatedPeakCurrentA > batteryContinuousCurrentA) {
-    warnings.push("Estimated peak propulsion current exceeds the battery C-rating limit.");
+    warnings.push("Estimated peak propulsion current exceeds the battery pack or connector current limit.");
   }
   if (escContinuousCurrentA > 0 && estimatedPeakCurrentA > escContinuousCurrentA) {
     warnings.push("Estimated peak propulsion current exceeds combined ESC current rating.");
@@ -1547,6 +1552,8 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
   const defaultMassCount = massItems.filter((item) => item.source === "estimated").length;
   const assumptions = [
     `Usable battery energy ends at the configured ${lowBatteryPercent}% low-battery reserve.`,
+    "Battery capacity is the published total pack capacity; parallel-cell configuration is descriptive and is not multiplied again.",
+    "C-ratings are advertised pack limits; connector, wiring, thermal, and propulsion limits may reduce usable current.",
     "Product spec Unit mass overrides catalog and property mass estimates.",
     settings.vehicle === "ArduPlane"
       ? "Plane cruise power is estimated from mass and installed motor power."
@@ -1572,7 +1579,10 @@ function analyzePerformance(nodes: DesignNode[], settings: SimulationSettings, s
     Math.round(
         (settings.vehicle === "Rover"
           ? clamp(motors.filter(motor => propertyNumber(motor, "driveTorqueNm", 0) > 0).length / Math.max(expectedMotorCount(settings), 1), 0, 1) * 34
-          : thrustToWeight ? clamp(thrustToWeight / 2.4, 0, 1) * 34 : 0) +
+          : settings.vehicle === "ArduPlane"
+            // A fixed-wing aircraft is well powered near 0.8:1; QuadPlane must also hover on its lift motors.
+            ? Math.min(clamp(cruiseThrustToWeight / 0.8, 0, 1), quadPlane ? clamp(liftThrustToWeight / 2.4, 0, 1) : 1) * 34
+            : thrustToWeight ? clamp(thrustToWeight / 2.4, 0, 1) * 34 : 0) +
         (missionEnduranceMin ? clamp(missionEnduranceMin / 28, 0, 1) * 28 : 0) +
         (rangeKm ? clamp(rangeKm / 10, 0, 1) * 16 : 0) +
         (missionDistanceKm > 0 ? clamp((missionReservePercent + 15) / 85, 0, 1) * 8 : 4) +
@@ -1669,7 +1679,7 @@ function SimulationPreview({
   const rangefinder = firstNodeByType(nodes, "rangefinder");
   const airspeed = firstNodeByType(nodes, "airspeed-sensor");
   const opticalFlow = firstNodeByType(nodes, "optical-flow");
-  const telemetry = firstNodeByType(nodes, "telemetry-radio");
+  const telemetry = firstNodeByType(nodes, "telemetry-radio") ?? firstNodeByType(nodes, "virtual-telemetry");
   const companion = firstNodeByType(nodes, "companion-computer");
   const adsb = firstNodeByType(nodes, "adsb-remote-id");
   const parachute = firstNodeByType(nodes, "parachute");
@@ -2385,7 +2395,11 @@ function MissionPanel({
   settings,
   telemetry,
   mission,
-  importedMissionReady,
+  importedMission,
+  action,
+  online,
+  onImport,
+  onClearImport,
   onUpload,
   onDownload,
   onSaveDownloaded
@@ -2393,7 +2407,11 @@ function MissionPanel({
   settings: SimulationSettings;
   telemetry: TelemetryStatus | null;
   mission: MissionSyncStatus | null;
-  importedMissionReady: boolean;
+  importedMission: ImportedMission | null;
+  action: "upload" | "download" | null;
+  online: boolean;
+  onImport: () => void;
+  onClearImport: () => void;
   onUpload: (vehicle: TelemetryStatus["vehicles"][number]) => void;
   onDownload: (vehicle: TelemetryStatus["vehicles"][number]) => void;
   onSaveDownloaded: () => void;
@@ -2401,6 +2419,8 @@ function MissionPanel({
   const vehicles = telemetry?.vehicles ?? [];
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const selectedVehicle = vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? vehicles[0];
+  const busy = Boolean(action || mission?.active);
+  const canTransfer = online && telemetry?.listener.active && selectedVehicle?.link && !busy;
 
   useEffect(() => {
     if (!selectedVehicleId && vehicles[0]) {
@@ -2412,7 +2432,7 @@ function MissionPanel({
     <div className="detail-content">
       <div className="panel-title">
         <span>Mission Sync</span>
-        <span className={`status-pill ${mission?.active ? "neutral" : "good"}`}>{mission?.active ? "Syncing" : "Ready"}</span>
+        <span className={`status-pill ${busy || !canTransfer ? "neutral" : "good"}`}>{action ? "Starting" : mission?.active ? "Syncing" : canTransfer ? "Ready" : "Disconnected"}</span>
       </div>
 
       <section className="mission-brief-card">
@@ -2421,7 +2441,11 @@ function MissionPanel({
         <span>
           {settings.missionEnvironment} · {settings.missionDistanceKm} km · {settings.missionAltitudeM} m target · {settings.missionPayload}
         </span>
-        {importedMissionReady ? <em>Imported waypoint route is ready and will be used for the next upload.</em> : null}
+        {importedMission ? <em>{importedMission.name} · {importedMission.itemCount} items. {importedMission.itemCount === 0 ? "Uploading this empty mission clears the vehicle route." : importedMission.distanceKm === null ? "Local coordinates: global route distance is unavailable." : `${importedMission.distanceKm.toFixed(2)} km estimated horizontal route.`}</em> : null}
+        <div className="action-grid">
+          <button type="button" disabled={busy} onClick={onImport}><FolderOpen size={16} /><span>Import route</span></button>
+          {importedMission ? <button type="button" disabled={busy} onClick={onClearImport}><RotateCcw size={16} /><span>Use generated route</span></button> : null}
+        </div>
       </section>
 
       <section className="mission-sync-panel">
@@ -2442,17 +2466,17 @@ function MissionPanel({
         )}
 
         <div className="action-grid">
-          <button type="button" disabled={!selectedVehicle || mission?.active} onClick={() => selectedVehicle && onUpload(selectedVehicle)}>
+          <button type="button" disabled={!canTransfer} onClick={() => selectedVehicle && onUpload(selectedVehicle)}>
             <Play size={16} />
-            <span>{importedMissionReady ? "Upload imported" : "Upload generated"}</span>
+            <span>{action === "upload" ? "Starting upload…" : importedMission ? importedMission.itemCount === 0 ? "Upload empty mission" : "Upload imported" : "Upload generated"}</span>
           </button>
-          <button type="button" disabled={!selectedVehicle || mission?.active} onClick={() => selectedVehicle && onDownload(selectedVehicle)}>
+          <button type="button" disabled={!canTransfer} onClick={() => selectedVehicle && onDownload(selectedVehicle)}>
             <Download size={16} />
-            <span>Download</span>
+            <span>{action === "download" ? "Starting download…" : "Download"}</span>
           </button>
         </div>
 
-        <div className="mission-status-card">
+        <div className="mission-status-card" role="status" aria-live="polite">
           <strong>{mission?.message ?? "Mission sync idle"}</strong>
           <span>
             {mission?.direction ?? "idle"} / {mission?.expectedCount ?? 0} item target
@@ -2681,6 +2705,8 @@ function App() {
   const [newMissionWizard, setNewMissionWizard] = useState<{ initialStep: 0 | 1 | 2 } | null>(null);
   const [sidebarView, setSidebarView] = useState<"runbook" | "catalog">("runbook");
   const [rightPanelMode, setRightPanelMode] = useState<"domain" | "tools">("domain");
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [compactPane, setCompactPane] = useState<"workspace" | "inspector">("workspace");
   const [workspaceSaved, setWorkspaceSaved] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [statusMessage, setStatusText] = useState("Ready");
@@ -2710,18 +2736,47 @@ function App() {
   const [setupDiagnostics, setSetupDiagnostics] = useState<SetupDiagnostics | null>(null);
   const [setupChecking, setSetupChecking] = useState(false);
   const [missionStatus, setMissionStatus] = useState<MissionSyncStatus | null>(null);
-  const [importedMissionText, setImportedMissionText] = useState<string | null>(null);
+  const [importedMission, setImportedMission] = useState<ImportedMission | null>(null);
+  const [missionAction, setMissionAction] = useState<"upload" | "download" | null>(null);
+  const missionActionRef = useRef(false);
+  const missionRevisionRef = useRef(0);
   const [paramExplanations, setParamExplanations] = useState<ParamExplanation[]>([]);
   const [scenarioRunResult, setScenarioRunResult] = useState<(ScenarioRunResult & { designKey: string }) | null>(null);
   const [comparisonDesign, setComparisonDesign] = useState<UavDesign | null>(null);
   const workspaceFileInputRef = useRef<HTMLInputElement | null>(null);
   const missionFileInputRef = useRef<HTMLInputElement | null>(null);
   const comparisonFileInputRef = useRef<HTMLInputElement | null>(null);
+  const catalogSearchRef = useRef<HTMLInputElement | null>(null);
   const manualLocationDialogRef = useRef<HTMLDialogElement | null>(null);
   const historyCurrentRef = useRef<WorkspaceHistoryEntry>(initialHistoryEntry);
   const historyApplyingRef = useRef(false);
   const undoStackRef = useRef<WorkspaceHistoryEntry[]>([]);
   const redoStackRef = useRef<WorkspaceHistoryEntry[]>([]);
+
+  useEffect(() => {
+    if (sidebarView !== "catalog") return;
+    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = requestAnimationFrame(() => catalogSearchRef.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || document.querySelector("dialog[open]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setSidebarView("runbook");
+    };
+    window.addEventListener("keydown", closeOnEscape, true);
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", closeOnEscape, true);
+      if (returnFocus?.isConnected && returnFocus.getClientRects().length) returnFocus.focus();
+    };
+  }, [sidebarView]);
+
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1101px)");
+    const closeCompactTools = () => { if (desktop.matches) setMobileToolsOpen(false); };
+    desktop.addEventListener("change", closeCompactTools);
+    return () => desktop.removeEventListener("change", closeCompactTools);
+  }, []);
 
   const replaceUndoStack = useCallback((nextStack: WorkspaceHistoryEntry[]) => {
     undoStackRef.current = nextStack;
@@ -2839,20 +2894,24 @@ function App() {
 
   useEffect(() => {
     let mounted = true;
+    let timer: number | undefined;
+    const controller = new AbortController();
     const refresh = () => {
-      getMissionStatus()
+      const revision = missionRevisionRef.current;
+      getMissionStatus(controller.signal)
         .then((result) => {
-          if (mounted) {
+          if (mounted && revision === missionRevisionRef.current && !missionActionRef.current) {
             setMissionStatus(result.mission);
           }
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => { if (mounted) timer = window.setTimeout(refresh, 2000); });
     };
     refresh();
-    const interval = window.setInterval(refresh, 2000);
     return () => {
       mounted = false;
-      window.clearInterval(interval);
+      window.clearTimeout(timer);
+      controller.abort();
     };
   }, []);
 
@@ -2997,7 +3056,7 @@ function App() {
     [edges, nodes]
   );
 
-  const editNode = useCallback((nodeId: string) => selectNode(nodeId), [selectNode]);
+  const editNode = useCallback((nodeId: string) => { selectNode(nodeId); setCompactPane("inspector"); }, [selectNode]);
 
   const nodeIssueMap = useMemo(() => {
     const map = new Map<string, "error" | "warning" | "ok">();
@@ -3139,6 +3198,20 @@ function App() {
     });
   }, [settings.windGustMps, settings.windSpeedMps, telemetryStatus]);
   const performanceEstimate = useMemo(() => analyzePerformance(nodes, settings, selectedNode), [nodes, selectedNode, settings]);
+  const batteryAlertSettings = useMemo(() => {
+    const pack = nodes.find((node) => node.data.componentType === "battery");
+    const metrics = pack ? batteryMetrics(pack.data.properties) : undefined;
+    const valid = metrics && !metrics.issues.some((issue) => issue.severity === "error");
+    return {
+      lowPercent: settings.batteryLowPercent,
+      criticalPercent: settings.batteryCriticalPercent,
+      lowVoltageV: valid ? metrics.lowVoltageV : undefined,
+      criticalVoltageV: valid ? metrics.criticalVoltageV : undefined,
+      lowAction: settings.batteryFailsafeAction,
+      criticalAction: settings.batteryCriticalAction,
+      vehicle: settings.vehicle
+    };
+  }, [nodes, settings]);
   const wireSuggestions = useMemo(() => autoWireSuggestions(nodes, edges, settings), [edges, nodes, settings]);
   const reviewAutoWireSuggestions = useMemo(() => {
     if (!reviewedIssue) {
@@ -3719,6 +3792,15 @@ function App() {
     );
   };
 
+  const applyBatteryPreset = (preset: (typeof productTemplates)[number]) => {
+    if (!selectedNode || selectedNode.data.componentType !== "battery") return;
+    const defaults = defaultPropertiesForComponent("battery");
+    setNodes((currentNodes) => currentNodes.map((node) => node.id === selectedNode.id
+      ? { ...node, data: { ...node.data, label: preset.name, properties: { ...defaults, ...preset.properties } } }
+      : node));
+    setStatusMessage(`${preset.name} applied; engineering checks and battery thresholds recalculated. Restart SITL to apply the replacement pack.`);
+  };
+
   const updateSelectedLabel = (label: string) => {
     if (!selectedNode) {
       return;
@@ -3953,18 +4035,30 @@ function App() {
   };
 
   const handleMissionUpload = async (vehicle: TelemetryStatus["vehicles"][number]) => {
+    if (missionActionRef.current || missionStatus?.active) return;
+    missionActionRef.current = true;
+    missionRevisionRef.current += 1;
+    setMissionAction("upload");
     try {
-      const generatedMission = importedMissionText ? null : await buildMissionFile(currentDesign());
-      const result = await uploadMission(vehicle.sysid, vehicle.compid, importedMissionText ?? generatedMission!.content);
+      const generatedMission = importedMission ? null : await buildMissionFile(currentDesign());
+      const result = await uploadMission(vehicle.sysid, vehicle.compid, importedMission?.text ?? generatedMission!.content);
       setMissionStatus(result.mission);
       setStatusMessage(result.mission.message);
       refreshLogs();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Mission upload failed");
+    } finally {
+      missionActionRef.current = false;
+      missionRevisionRef.current += 1;
+      setMissionAction(null);
     }
   };
 
   const handleMissionDownload = async (vehicle: TelemetryStatus["vehicles"][number]) => {
+    if (missionActionRef.current || missionStatus?.active) return;
+    missionActionRef.current = true;
+    missionRevisionRef.current += 1;
+    setMissionAction("download");
     try {
       const result = await downloadMission(vehicle.sysid, vehicle.compid);
       setMissionStatus(result.mission);
@@ -3972,6 +4066,10 @@ function App() {
       refreshLogs();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Mission download failed");
+    } finally {
+      missionActionRef.current = false;
+      missionRevisionRef.current += 1;
+      setMissionAction(null);
     }
   };
 
@@ -4023,7 +4121,7 @@ function App() {
     setTab("inspector");
     setSitlPlan(null);
     setScenarioRunResult(null);
-    setImportedMissionText(null);
+    setImportedMission(null);
     setWorkspaceSaved(false);
     setWorkflowStage("integrate");
     setStatusMessage(message);
@@ -4214,17 +4312,15 @@ function App() {
     }
 
     try {
+      if (file.size > MAX_MISSION_FILE_BYTES) throw new Error("Mission file must be no larger than 2 MiB.");
       const content = await file.text();
-      const distanceKm = missionDistanceFromText(content);
-      if (distanceKm <= 0) {
-        throw new Error("No QGC waypoint distance could be read from the selected mission.");
-      }
-      setSettings((currentSettings) => ({
-        ...currentSettings,
-        missionDistanceKm: Math.round(distanceKm * 100) / 100
+      const items = parseMissionText(content);
+      const distanceKm = missionDistanceKm(items);
+      if (distanceKm !== null) setSettings((currentSettings) => ({
+        ...currentSettings, missionDistanceKm: Math.round(distanceKm * 100) / 100
       }));
-      setImportedMissionText(content);
-      setStatusMessage(`${file.name} imported and ready for upload; mission distance set to ${distanceKm.toFixed(2)} km`);
+      setImportedMission({ text: content, name: file.name, itemCount: items.length, distanceKm });
+      setStatusMessage(`${file.name} imported (${items.length} items); ${items.length === 0 ? "uploading clears the vehicle route" : distanceKm === null ? "local route distance unavailable" : `estimated horizontal distance ${distanceKm.toFixed(2)} km`}`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not import mission");
     }
@@ -4404,7 +4500,8 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (newMissionWizard || manualSimLocationOpen || reviewSelection) {
+      if (event.defaultPrevented) return;
+      if (newMissionWizard || manualSimLocationOpen || reviewSelection || document.querySelector("dialog[open]")) {
         return;
       }
       const key = event.key.toLowerCase();
@@ -4588,11 +4685,13 @@ function App() {
   const openToolPanel = (nextTab: AppTab) => {
     setTab(nextTab);
     setRightPanelMode("tools");
+    setCompactPane("inspector");
   };
 
   const handleDomainChange = (domain: EngineeringDomainId) => {
     setActiveDomain(domain);
     setRightPanelMode("domain");
+    setCompactPane("inspector");
     setStatusMessage(`${domainViews.find((candidate) => candidate.id === domain)?.label ?? "Engineering"} review opened`);
   };
 
@@ -4606,6 +4705,7 @@ function App() {
     }
     if (stage === "integrate") {
       setRightPanelMode("domain");
+      setCompactPane("inspector");
       return;
     }
     openToolPanel(stage === "verify" ? "validation" : "simulation");
@@ -4647,6 +4747,7 @@ function App() {
         }
       }
       setRightPanelMode("domain");
+      setCompactPane("inspector");
       setCheckStatusScope("all");
       return;
     }
@@ -4676,9 +4777,11 @@ function App() {
   };
 
   return (
-    <div className="app-shell workbench-shell">
+    <div className={`app-shell workbench-shell stitch-workbench compact-${compactPane}${labSettings.viewMode === "3d" ? " is-three-view" : ""}`}>
+      <a className="workspace-skip-link" href={compactPane === "inspector" ? "#workspace-inspector" : "#workspace-canvas"}>Skip to {compactPane === "inspector" ? "inspector" : "workspace"}</a>
       <LabHeader
         designName={designName}
+        designSaved={workspaceSaved}
         stage={workflowStage}
         onDesignNameChange={(value) => {
           setDesignName(value);
@@ -4692,14 +4795,25 @@ function App() {
         canRedo={canRedo}
       />
 
+      <div className="compact-workspace-controls">
+        <button type="button" className="compact-tools-trigger" aria-haspopup="dialog" aria-controls="workbench-tool-dialog" aria-expanded={mobileToolsOpen} onClick={() => setMobileToolsOpen(true)}><Menu size={18} aria-hidden="true" />Tools</button>
+        <div role="group" aria-label="Workspace panel" className="compact-pane-switch">
+          <button type="button" aria-pressed={compactPane === "workspace"} onClick={() => setCompactPane("workspace")}><GitBranch size={16} aria-hidden="true" />Workspace</button>
+          <button type="button" aria-pressed={compactPane === "inspector"} onClick={() => setCompactPane("inspector")}><Settings size={16} aria-hidden="true" />Inspector</button>
+        </div>
+        {compactPane === "inspector" ? <label className="compact-domain-picker">Engineering domain<select value={activeDomain} onChange={(event) => handleDomainChange(event.target.value as EngineeringDomainId)}>{domainViews.map((domain) => <option value={domain.id} key={domain.id}>{domain.shortLabel ?? domain.label} · {domain.completed}/{domain.total}</option>)}</select></label> : null}
+      </div>
+
       <main className="workspace lab-workspace">
         <WorkbenchNavigation
           activeTab={rightPanelMode === "tools" ? tab : null}
           onSelect={openToolPanel}
           connected={Boolean(telemetryStatus?.listener.active)}
+          mobileOpen={mobileToolsOpen}
+          onMobileClose={() => setMobileToolsOpen(false)}
           domainProgress={`${domainAssessments.filter((domain) => domain.status === "complete").length} of ${domainAssessments.length} domains checked`}
           activeStage={workflowStage}
-          onOpenLibrary={() => setSidebarView("catalog")}
+          onOpenLibrary={() => { setCompactPane("workspace"); setSidebarView("catalog"); }}
           onSelectStage={handleRunbookStage}
         />
         <aside className="catalog-panel catalog-drawer" hidden={sidebarView !== "catalog"} aria-label="Component library">
@@ -4714,14 +4828,15 @@ function App() {
                 <Trash2 size={14} />
                 Remove selected
               </button>
-              <button className="catalog-close" type="button" onClick={() => setSidebarView("runbook")}>
-                Back to runbook
+              <button className="catalog-close" type="button" aria-label="Close component library" onClick={() => setSidebarView("runbook")}>
+                <X size={15} aria-hidden="true" /> Close library
               </button>
             </div>
           </div>
           <label className="search-box">
             <Search size={16} />
             <input
+              ref={catalogSearchRef}
               value={catalogQuery}
               onChange={(event) => setCatalogQuery(event.target.value)}
               placeholder="Search"
@@ -4879,12 +4994,25 @@ function App() {
           </div>
         </aside>
 
-        <section className="lab-canvas-stage">
-          <DomainStrip domains={domainViews} activeDomain={activeDomain} onChange={handleDomainChange} />
+        <section id="workspace-canvas" tabIndex={-1} className="lab-canvas-stage" aria-label="Design workspace">
+          <div className="workspace-contextbar">
+            <div><GitBranch size={18} aria-hidden="true" /><h1>Systems integration</h1></div>
+            <span>{nodes.length} components <i aria-hidden="true">·</i> {edges.length} connections</span>
+          </div>
           <div className="workspace-viewbar">
-          <div className="canvas-mode-tabs" role="tablist" aria-label="Design workspace view">
+          <div className="canvas-mode-tabs" role="tablist" aria-label="Design workspace view" onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const nextView = event.key === "Home" ? "2d" : event.key === "End" ? "3d" : labSettings.viewMode === "2d" ? "3d" : "2d";
+            setLabSettings((current) => ({ ...current, viewMode: nextView }));
+            document.getElementById(`view-tab-${nextView}`)?.focus();
+          }}>
             <button
+              id="view-tab-2d"
               role="tab"
+              aria-controls="design-view-panel"
+              tabIndex={labSettings.viewMode === "2d" ? 0 : -1}
               aria-selected={labSettings.viewMode === "2d"}
               className={labSettings.viewMode === "2d" ? "active" : ""}
               type="button"
@@ -4893,7 +5021,10 @@ function App() {
               <GitBranch size={15} /> 2D Design
             </button>
             <button
+              id="view-tab-3d"
               role="tab"
+              aria-controls="design-view-panel"
+              tabIndex={labSettings.viewMode === "3d" ? 0 : -1}
               aria-selected={labSettings.viewMode === "3d"}
               className={labSettings.viewMode === "3d" ? "active" : ""}
               type="button"
@@ -4909,6 +5040,8 @@ function App() {
             onLoad={handleLoadWorkspaceClick}
           />
           </div>
+          <DomainStrip domains={domainViews} activeDomain={activeDomain} onChange={handleDomainChange} />
+          <div id="design-view-panel" className="design-view-panel" role="tabpanel" aria-labelledby={`view-tab-${labSettings.viewMode}`}>
           <input
             ref={workspaceFileInputRef}
             className="workspace-file-input"
@@ -4985,11 +5118,6 @@ function App() {
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeStrokeWidth={3} />
-            <Panel position="top-left" className="flow-panel">
-              <GitBranch size={16} />
-              <span>{nodes.length} components</span>
-              <span>{edges.length} links</span>
-            </Panel>
             </ReactFlow>
 
           {hoveredEdgeDetails && hoveredTooltipPosition ? (
@@ -5073,9 +5201,10 @@ function App() {
               </Suspense>
             </section>
           )}
+          </div>
         </section>
 
-        <aside className="detail-panel">
+        <aside id="workspace-inspector" tabIndex={-1} className="detail-panel" aria-label={rightPanelMode === "domain" ? `${activeDomainView.label} domain review` : workbenchToolLabels[tab]}>
           {rightPanelMode === "domain" ? (
             <DomainReviewPanel
               domain={activeDomainView}
@@ -5083,21 +5212,27 @@ function App() {
               onAutoFix={() => applyAutoWireSuggestions()}
               autoFixCount={wireSuggestions.length}
               onRunCheck={handleRunDomainCheck}
-              onOpenTools={() => setRightPanelMode("tools")}
+              onOpenTools={() => { setRightPanelMode("tools"); setCompactPane("inspector"); }}
             />
           ) : (
             <>
           <div className="lab-tools-header">
-            <button type="button" onClick={() => setRightPanelMode("domain")}>
+            <button
+              type="button"
+              title={`Back to the ${activeDomainView.label} acceptance review`}
+              aria-label={`Back to ${activeDomainView.shortLabel ?? activeDomainView.label} check`}
+              onClick={() => setRightPanelMode("domain")}
+            >
               <ShieldCheck size={16} />
               {activeDomainView.shortLabel ?? activeDomainView.label} check
             </button>
             <div>
-              <button type="button" title="Export JSON" onClick={() => void handleJsonDownload()}><FileJson size={15} /></button>
-              <button type="button" title="Export ArduPilot parameters" onClick={handleParamsDownload}><Download size={15} /></button>
-              <button type="button" title="Check for software updates" onClick={handleSoftwareUpdate} disabled={softwareUpdating}><RefreshCw size={15} /></button>
+              <button type="button" title="Export JSON" aria-label="Export JSON" onClick={() => void handleJsonDownload()}><FileJson size={15} /></button>
+              <button type="button" title="Export ArduPilot parameters" aria-label="Export ArduPilot parameters" onClick={handleParamsDownload}><Download size={15} /></button>
+              <button type="button" title="Check for software updates" aria-label="Check for software updates" onClick={handleSoftwareUpdate} disabled={softwareUpdating}><RefreshCw size={15} /></button>
             </div>
           </div>
+          <div className="inspector-tool-context"><small>Workspace tool</small><h2>{workbenchToolLabels[tab]}</h2><p>{tab === "inspector" ? selectedEdge ? "Selected connection" : selectedNode ? selectedNode.data.label : "Select a component or connection to inspect" : designName}</p></div>
           <section className="connection-legend" hidden={tab !== "inspector" && tab !== "validation"}>
             <h2>Connections</h2>
             <div>
@@ -5225,6 +5360,10 @@ function App() {
                       </label>
                     ))}
                   </section>
+
+                  {selectedNode.data.componentType === "battery" ? (
+                    <BatteryDetails node={selectedNode} presets={productTemplates} onApplyPreset={applyBatteryPreset} />
+                  ) : null}
 
                   {selectedDefinition.properties.map((property) => (
                     <label className="field" key={property.key}>
@@ -5567,29 +5706,27 @@ function App() {
                   <label className="field">
                     <span>Low action</span>
                     <select
+                      aria-label="Low action"
                       value={settings.batteryFailsafeAction}
                       onChange={(event) =>
                         setSettings({ ...settings, batteryFailsafeAction: event.target.value as SimulationSettings["batteryFailsafeAction"] })
                       }
                     >
-                      <option value="Warn">Warn</option>
-                      <option value="Land">Land</option>
-                      <option value="RTL">RTL</option>
-                      <option value="SmartRTL">SmartRTL</option>
+                      {batteryActionOptions(settings.vehicle, false).map((action) => <option key={action} value={action}>{action}</option>)}
+                      {!batteryActionOptions(settings.vehicle, false).includes(settings.batteryFailsafeAction) ? <option value={settings.batteryFailsafeAction}>{settings.batteryFailsafeAction} (legacy)</option> : null}
                     </select>
                   </label>
                   <label className="field">
                     <span>Critical action</span>
                     <select
+                      aria-label="Critical action"
                       value={settings.batteryCriticalAction}
                       onChange={(event) =>
                         setSettings({ ...settings, batteryCriticalAction: event.target.value as SimulationSettings["batteryCriticalAction"] })
                       }
                     >
-                      <option value="Land">Land</option>
-                      <option value="RTL">RTL</option>
-                      <option value="SmartRTL">SmartRTL</option>
-                      <option value="Terminate">Terminate</option>
+                      {batteryActionOptions(settings.vehicle, true).map((action) => <option key={action} value={action}>{action}</option>)}
+                      {!batteryActionOptions(settings.vehicle, true).includes(settings.batteryCriticalAction) ? <option value={settings.batteryCriticalAction}>{settings.batteryCriticalAction} (legacy)</option> : null}
                     </select>
                   </label>
                 </div>
@@ -5643,13 +5780,6 @@ function App() {
                     <span>Bundle</span>
                   </button>
                 </div>
-                <input
-                  ref={missionFileInputRef}
-                  className="workspace-file-input"
-                  type="file"
-                  accept=".waypoints,.txt,text/plain"
-                  onChange={handleMissionFileSelected}
-                />
               </section>
 
               <section className="gazebo-helper">
@@ -5684,7 +5814,7 @@ function App() {
 
               <section className="gcs-targets">
                 <h2>Ground Stations</h2>
-                <GcsConnectionGuide bridge={telemetryStatus?.gcsBridge} targets={gcsTargets} tcpPort={settings.gcsTcpPort ?? 5762} />
+                <GcsConnectionGuide bridge={telemetryStatus?.gcsBridge} targets={gcsTargets} tcpPort={settings.gcsTcpPort ?? 5762} labPort={settings.labTelemetryPort ?? 14552} />
                 <label className="field"><span>MAVLink TCP port</span><input type="number" min={1024} max={65535}
                   value={settings.gcsTcpPort ?? 5762}
                   onChange={(event) => setSettings((current) => ({ ...current, gcsTcpPort: Number(event.target.value) }))} /></label>
@@ -5745,7 +5875,11 @@ function App() {
               settings={settings}
               telemetry={telemetryStatus}
               mission={missionStatus}
-              importedMissionReady={Boolean(importedMissionText)}
+              importedMission={importedMission}
+              action={missionAction}
+              online={apiOnline === true}
+              onImport={handleMissionImportClick}
+              onClearImport={() => { setImportedMission(null); setStatusMessage("Generated route selected for the next upload"); }}
               onUpload={(vehicle) => void handleMissionUpload(vehicle)}
               onDownload={(vehicle) => void handleMissionDownload(vehicle)}
               onSaveDownloaded={handleSaveDownloadedMission}
@@ -5833,6 +5967,8 @@ function App() {
           )}
         </aside>
       </main>
+      <input ref={missionFileInputRef} className="workspace-file-input" type="file"
+        aria-label="Import mission file" accept=".waypoints,.txt,text/plain" onChange={handleMissionFileSelected} />
 
       {newMissionWizard ? (
         <NewMissionWizard
@@ -5854,6 +5990,12 @@ function App() {
         onOpenLibrary={() => { setReviewSelection(null); setSidebarView("catalog"); }}
         onOpenSettings={() => { setReviewSelection(null); openToolPanel("simulation"); }}
         onClose={() => setReviewSelection(null)} />
+      <TelemetryAlertDialog
+        status={telemetryStatus}
+        batterySettings={batteryAlertSettings}
+        onCommand={handleMavlinkCommand}
+        onOpenTelemetry={() => openToolPanel("telemetry")}
+      />
       <dialog
         ref={manualLocationDialogRef}
         className="sim-location-dialog"
@@ -5924,6 +6066,13 @@ function App() {
         onOpenSimulation={() => openToolPanel("simulation")}
       />
 
+      <nav className="compact-quicknav" aria-label="Mobile workspace shortcuts">
+        <button type="button" aria-pressed={compactPane === "workspace"} onClick={() => setCompactPane("workspace")}><GitBranch size={20} aria-hidden="true" /><span>Workspace</span></button>
+        <button type="button" aria-pressed={compactPane === "inspector" && rightPanelMode === "domain"} onClick={() => { setRightPanelMode("domain"); setCompactPane("inspector"); }}><ShieldCheck size={20} aria-hidden="true" /><span>Review</span></button>
+        <button type="button" aria-pressed={compactPane === "inspector" && rightPanelMode === "tools" && tab === "mission"} onClick={() => openToolPanel("mission")}><MapPin size={20} aria-hidden="true" /><span>Mission</span></button>
+        <button type="button" aria-pressed={compactPane === "inspector" && rightPanelMode === "tools" && tab === "params"} onClick={() => openToolPanel("params")}><ScrollText size={20} aria-hidden="true" /><span>Params</span></button>
+        <button type="button" aria-pressed={compactPane === "inspector" && rightPanelMode === "tools" && tab === "firmware"} onClick={() => openToolPanel("firmware")}><CircuitBoard size={20} aria-hidden="true" /><span>Firmware</span></button>
+      </nav>
       <footer className="statusbar" role="status" aria-live="polite">
         <span>{currentCheckStatus}</span>
         <button type="button" onClick={() => openToolPanel("connections")}><span className={`connection-dot ${telemetryStatus?.listener.active ? "" : "inactive"}`} />{apiOnline === false ? "API offline · telemetry unavailable" : apiOnline === null ? "Connecting to API" : telemetryStatus?.listener.active ? `UDP ${telemetryStatus.listener.port} listening` : "Telemetry stopped"} · {!systemStatus ? "SITL detection pending" : systemStatus.sitl.available ? "SITL detected" : "SITL not detected"}</button>

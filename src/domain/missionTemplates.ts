@@ -1,5 +1,5 @@
 import { MarkerType } from "@xyflow/react";
-import { airframeLabel, rotorCountForFrame } from "./airframes";
+import { airframeLabel, airframeOption, normalizeAirframeValue, propulsionMotorCountForFrame, vehicleForAirframe } from "./airframes";
 import { defaultPropertiesForComponent } from "./componentCatalog";
 import { defaultSettings, type DesignEdge, type DesignNode, type SimulationSettings, type UavDesign } from "./design";
 
@@ -151,10 +151,14 @@ function payloadLabel(systems: MissionSystemId[]) {
 
 export function createMissionDesign(draft: NewMissionDraft): UavDesign {
   const profile = missionProfile(draft.profile);
-  const frame = draft.vehicle === "ArduCopter" ? draft.frame : defaultFrameForVehicle(draft.vehicle);
-  const propulsionCount = draft.vehicle === "Rover" ? 0 : Math.max(1, rotorCountForFrame(frame));
+  const frame = vehicleForAirframe(draft.frame) === draft.vehicle ? normalizeAirframeValue(draft.frame) : defaultFrameForVehicle(draft.vehicle);
+  const airframe = airframeOption(frame);
+  const propulsionCount = propulsionMotorCountForFrame(frame);
   const nodes: DesignNode[] = [
-    componentNode("frame-1", "frame", airframeLabel(frame), 520, 150, { layout: frame }),
+    componentNode("frame-1", "frame", airframeLabel(frame), 520, 150, {
+      layout: frame,
+      ...(airframe.dimensions ? { spanMm: airframe.dimensions.spanM * 1000, lengthMm: airframe.dimensions.lengthM * 1000, heightMm: airframe.dimensions.heightM * 1000 } : {})
+    }),
     componentNode("landing-gear-1", "landing-gear", draft.vehicle === "Rover" ? "Wheel Set" : "Landing Gear", 520, 10, {
       style: draft.vehicle === "Rover" ? "Wheels" : draft.vehicle === "ArduPlane" ? "Fixed legs" : "Skids"
     }),
@@ -180,6 +184,8 @@ export function createMissionDesign(draft: NewMissionDraft): UavDesign {
     connection("e-pdb-harness", "pdb-1", "power-out", "harness-1", "power-in"),
     connection("e-frame-gear", "frame-1", "mount-out", "landing-gear-1", "mount-in"),
     connection("e-gps-fc", "gps-1", "uart-out", "fc-1", "uart-in"),
+    connection("e-pm-gps-power", "pm-1", "power-out", "gps-1", "power-in"),
+    connection("e-pm-compass-power", "pm-1", "power-out", "compass-1", "power-in"),
     connection("e-compass-fc", "compass-1", "i2c-out", "fc-1", "i2c-in"),
     connection("e-fc-radio", "fc-1", "uart-out", "radio-1", "uart-in"),
     connection("e-harness-radio", "harness-1", "power-out", "radio-1", "power-in"),
@@ -195,12 +201,34 @@ export function createMissionDesign(draft: NewMissionDraft): UavDesign {
     const escY = 300 + Math.sin(angle) * 205;
     const number = index + 1;
     nodes.push(componentNode(`esc-${number}`, "esc", `ESC ${number}`, escX, escY));
-    nodes.push(componentNode(`motor-${number}`, "motor", draft.vehicle === "ArduPlane" ? "Propulsion Motor" : `Motor ${number}`, motorX, motorY));
+    const propulsionRole = draft.vehicle === "Rover" ? "Ground drive" : draft.vehicle === "ArduPlane" && (frame !== "quadplane" || index === 4) ? "Cruise" : "Lift";
+    const motorLabel = draft.vehicle === "Rover"
+      ? propulsionCount === 2 ? `${index === 0 ? "Left" : "Right"} Drive Motor` : "Drive Motor"
+      : propulsionRole === "Cruise" ? "Cruise Motor" : `Lift Motor ${number}`;
+    nodes.push(componentNode(`motor-${number}`, "motor", motorLabel, motorX, motorY, {
+      propulsionRole,
+      ...(draft.vehicle === "Rover" ? { propSize: "None (wheel / track drive)", thrustGrams: 0, driveTorqueNm: 1, specNotes: "Concept placeholder: replace torque with the selected drive's rated output torque." } : {})
+    }));
     edges.push(
       connection(`e-frame-motor-${number}`, "frame-1", "mount-out", `motor-${number}`, "mount-in"),
       connection(`e-pdb-esc-${number}`, "pdb-1", "power-out", `esc-${number}`, "power-in"),
       connection(`e-fc-esc-${number}`, "fc-1", "pwm-out", `esc-${number}`, "pwm-in"),
       connection(`e-esc-motor-${number}`, `esc-${number}`, "power-out", `motor-${number}`, "power-in")
+    );
+  }
+
+  const controlSurfaces = draft.vehicle === "ArduPlane"
+    ? frame === "fixed-wing-flying-wing" ? ["Left Elevon", "Right Elevon"]
+      : frame === "fixed-wing-vtail" ? ["Left Aileron", "Right Aileron", "Left Ruddervator", "Right Ruddervator"]
+        : ["Left Aileron", "Right Aileron", "Elevator", "Rudder"]
+    : draft.vehicle === "Rover" && airframe.simulatorFrame === "rover" ? ["Steering"] : [];
+  for (const [index, controlSurface] of controlSurfaces.entries()) {
+    const id = `servo-${index + 1}`;
+    nodes.push(componentNode(id, "servo", `${controlSurface} Servo`, 1100, 60 + index * 140, { function: controlSurface }));
+    edges.push(
+      connection(`e-frame-${id}`, "frame-1", "mount-out", id, "mount-in"),
+      connection(`e-regulated-${id}`, "pm-1", "power-out", id, "power-in"),
+      connection(`e-fc-${id}`, "fc-1", "pwm-out", id, "pwm-in")
     );
   }
 
@@ -280,6 +308,7 @@ export function createMissionDesign(draft: NewMissionDraft): UavDesign {
       missionDistanceKm: Math.max(0, draft.distanceKm),
       vehicle: draft.vehicle,
       frame,
+      batteryCriticalAction: draft.vehicle === "Rover" ? "Hold" : defaultSettings.batteryCriticalAction,
       testScenario: draft.systems.includes("optical-flow") ? "gps-denied" : "nominal"
     }
   };

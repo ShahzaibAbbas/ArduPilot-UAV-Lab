@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"surface-dim":"#cadcf0","primary":"#00685b","on-tertiary-fixed":"#2f1500","tertiary":"#8d4b00","on-secondary-fixed-variant":"#004e61","tertiary-container":"#b15f00","outline":"#6d7a76","on-secondary-container":"#006077","on-tertiary-fixed-variant":"#6e3900","on-tertiary-container":"#fffbff","inverse-surface":"#213242","on-background":"#0a1d2c","on-error-container":"#93000a","primary-fixed-dim":"#71d8c4","surface-tint":"#006b5d","on-error":"#ffffff","surface":"#f7f9ff","on-primary-fixed":"#00201b","surface-container":"#e2efff","surface-variant":"#d2e5f9","on-surface-variant":"#3d4946","on-tertiary":"#ffffff","primary-container":"#008373","on-surface":"#0a1d2c","tertiary-fixed":"#ffdcc3","tertiary-fixed-dim":"#ffb77d","on-secondary-fixed":"#001f28","on-primary-container":"#f4fffb","surface-container-highest":"#d2e5f9","error-container":"#ffdad6","outline-variant":"#bdc9c5","error":"#ba1a1a","surface-container-lowest":"#ffffff","surface-container-low":"#edf4ff","secondary":"#006780","primary-fixed":"#8ef5e0","surface-bright":"#f7f9ff","inverse-primary":"#71d8c4","secondary-fixed":"#b7eaff","on-primary":"#ffffff","on-primary-fixed-variant":"#005046","inverse-on-surface":"#e7f2ff","background":"#f7f9ff","on-secondary":"#ffffff","secondary-container":"#76dcff","surface-container-high":"#d8eaff","secondary-fixed-dim":"#6cd3f7"},borderRadius:{"DEFAULT":"0.25rem","lg":"0.5rem","xl":"0.75rem","full":"9999px"},spacing:{"space-sm":"0.375rem","space-xs":"0.25rem","gutter":"0.5rem","space-md":"0.5rem","gutter-loose":"1rem","margin":"0.75rem","space-xl":"1rem","margin-panel":"0.5rem","space-lg":"0.75rem"},fontFamily:{"body-lg":["Inter"],"body-md":["Inter"],"headline-sm":["Inter"],"label-md":["JetBrains Mono"],"label-lg":["JetBrains Mono"],"label-sm":["JetBrains Mono"],"headline-md":["Inter"],"headline-lg":["Inter"],"body-sm":["Inter"]},fontSize:{"body-lg":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"0em","fontWeight":"400"}],"body-md":["0.8125rem",{"lineHeight":"1.125rem","letterSpacing":"0em","fontWeight":"400"}],"headline-sm":["1rem",{"lineHeight":"1.375rem","letterSpacing":"-0.01em","fontWeight":"600"}],"label-md":["0.75rem",{"lineHeight":"0.875rem","letterSpacing":"-0.005em","fontWeight":"500"}],"label-lg":["0.8125rem",{"lineHeight":"1rem","letterSpacing":"-0.01em","fontWeight":"500"}],"label-sm":["0.6875rem",{"lineHeight":"0.75rem","letterSpacing":"0em","fontWeight":"400"}],"headline-md":["1.25rem",{"lineHeight":"1.75rem","letterSpacing":"-0.015em","fontWeight":"600"}],"headline-lg":["1.75rem",{"lineHeight":"2.25rem","letterSpacing":"-0.02em","fontWeight":"600"}],"body-sm":["0.75rem",{"lineHeight":"1rem","letterSpacing":"0.005em","fontWeight":"400"}]}}}}</script></head><body class="bg-surface font-body-md text-on-surface antialiased select-none"><header class="fixed top-0 left-0 right-0 h-12 bg-inverse-surface text-inverse-on-surface z-50 flex items-center justify-between px-space-lg shadow-[0_1px_8px_rgba(0,0,0,0.12)]"><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary-fixed text-[20px]">flight_takeoff</span><span class="font-label-lg text-label-lg tracking-wider text-inverse-on-surface uppercase">ARDUPILOT LAB</span></div><span class="text-outline text-body-sm">/</span><div class="flex items-center gap-space-xs px-space-xs py-0.5 rounded hover:bg-surface-variant/20 cursor-text"><span class="font-headline-sm text-body-lg text-inverse-on-surface">Quad X SITL Prototype</span><span class="material-symbols-outlined text-[14px] text-outline-variant">edit</span></div><div class="flex items-center gap-space-xs px-space-sm py-0.5 rounded-full bg-tertiary-container/20 text-tertiary-fixed text-label-sm font-label-sm"><span class="w-1.5 h-1.5 rounded-full bg-tertiary-fixed"></span><span>Unsaved changes (2)</span></div></div><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-sm bg-surface-dim/10 px-space-md py-1 rounded text-inverse-on-surface text-label-sm font-label-sm"><span class="material-symbols-outlined text-[16px] text-primary-fixed-dim">account_tree</span><span>04 / 06 · Integrate systems</span></div><div class="flex items-center gap-space-xs"><button class="p-1 text-outline-variant hover:text-inverse-on-surface rounded hover:bg-surface-variant/20 transition-colors" title="Undo" type="button"><span class="material-symbols-outlined text-[18px]">undo</span></button><button class="p-1 text-outline-variant hover:text-inverse-on-surface rounded hover:bg-surface-variant/20 transition-colors" title="Redo" type="button"><span class="material-symbols-outlined text-[18px]">redo</span></button></div><button class="flex items-center gap-space-xs px-space-md py-1 bg-surface-variant/20 text-inverse-on-surface hover:bg-surface-variant/30 rounded text-label-sm font-label-sm transition-colors" type="button"><span class="material-symbols-outlined text-[16px]">bookmark</span><span>Save snapshot</span></button><button class="flex items-center gap-space-xs px-space-lg py-1 bg-primary text-on-primary hover:bg-primary-container rounded text-label-sm font-label-sm transition-colors" type="button"><span class="material-symbols-outlined text-[16px]">verified</span><span>Review integration</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></header><aside class="fixed left-0 top-12 bottom-7 w-[220px] bg-surface-container-lowest z-40 flex flex-col p-space-md shadow-[0_1px_8px_rgba(0,0,0,0.04)] overflow-y-auto"><button class="w-full flex items-center justify-center gap-space-xs py-1.5 px-space-md mb-space-sm bg-surface-container text-primary hover:bg-surface-container-high rounded font-label-md text-label-md transition-colors" type="button"><span class="material-symbols-outlined text-[16px]">add</span><span>+ Component Library</span></button><div class="relative mb-space-md"><span class="absolute left-2 top-1.5 material-symbols-outlined text-[16px] text-outline">search</span><input class="w-full pl-7 pr-7 py-1 text-body-sm font-body-sm bg-surface-container-low text-on-surface rounded placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary" placeholder="Find tool..." type="text"/><span class="absolute right-2 top-1 px-1 py-0.2 bg-surface-container text-outline rounded text-label-sm font-label-sm">/</span></div><nav class="flex-1 flex flex-col gap-space-md" data-active-classes="bg-primary text-on-primary font-medium"><div class="flex flex-col gap-space-xs"><span class="px-space-xs text-label-sm font-label-sm uppercase tracking-wider text-outline">Design</span><div class="flex flex-col gap-0.5"><a aria-current="page" class="flex items-center gap-space-sm px-space-sm py-1 rounded transition-colors bg-primary text-on-primary font-medium" data-path="inspect" href="#"><span class="material-symbols-outlined text-[16px]">view_in_ar</span><span>Inspect</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="validate" href="#"><span class="material-symbols-outlined text-[16px]">rule</span><span>Validate</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="performance" href="#"><span class="material-symbols-outlined text-[16px]">speed</span><span>Performance</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="bom" href="#"><span class="material-symbols-outlined text-[16px]">inventory_2</span><span>BOM</span></a></div></div><div class="flex flex-col gap-space-xs"><span class="px-space-xs text-label-sm font-label-sm uppercase tracking-wider text-outline">Simulate &amp; Connect</span><div class="flex flex-col gap-0.5"><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="sitl" href="#"><span class="material-symbols-outlined text-[16px]">flight</span><span>SITL</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="mission" href="#"><span class="material-symbols-outlined text-[16px]">map</span><span>Mission</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="live" href="#"><span class="material-symbols-outlined text-[16px]">sensors</span><span>Live</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="firmware" href="#"><span class="material-symbols-outlined text-[16px]">memory</span><span>Firmware</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="trace" href="#"><span class="material-symbols-outlined text-[16px]">timeline</span><span>Trace</span></a></div></div><div class="flex flex-col gap-space-xs"><span class="px-space-xs text-label-sm font-label-sm uppercase tracking-wider text-outline">Workspace</span><div class="flex flex-col gap-0.5"><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="ports-setup" href="#"><span class="material-symbols-outlined text-[16px]">cable</span><span>Ports &amp; setup</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="workspace-files" href="#"><span class="material-symbols-outlined text-[16px]">folder</span><span>Workspace files</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="params" href="#"><span class="material-symbols-outlined text-[16px]">tune</span><span>Params</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="compare" href="#"><span class="material-symbols-outlined text-[16px]">difference</span><span>Compare</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="logs" href="#"><span class="material-symbols-outlined text-[16px]">receipt_long</span><span>Logs</span></a><a class="flex items-center gap-space-sm px-space-sm py-1 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="terminal" href="#"><span class="material-symbols-outlined text-[16px]">terminal</span><span>Terminal</span></a></div></div></nav><div class="pt-space-sm"><a class="flex items-center gap-space-sm px-space-sm py-1.5 rounded text-body-sm text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors" data-path="mission-runbook" href="#"><span class="material-symbols-outlined text-[16px]">menu_book</span><span>Mission Runbook</span></a></div></aside><div class="pl-[220px]"><main class="w-full min-h-[calc(100vh-48px-28px)] pt-12 pb-7 bg-surface"><div class="flex flex-col w-full">
+<!-- Top Systems Integration Engineering Utility Ribbon -->
+<section class="bg-surface-container-lowest px-space-lg py-space-sm shadow-sm flex flex-col gap-space-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<!-- Title & Context Counts -->
+<div class="flex items-center gap-space-lg">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-sm">
+<span class="font-headline-sm text-headline-sm text-on-surface">Systems Integration</span>
+<span class="px-space-xs py-0.5 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm">Revision v2.4-sitl</span>
+</div>
+<span class="font-label-sm text-label-sm text-outline">18 components · 28 connections · Dual CAN redundancy mode</span>
+</div>
+<div class="h-6 w-px bg-surface-container-high hidden sm:block"></div>
+<!-- 2D / 3D Canvas Switcher -->
+<div class="inline-flex p-0.5 rounded bg-surface-container-low">
+<button class="px-space-md py-1.5 h-9 rounded bg-surface-container-lowest text-primary shadow-sm font-label-md text-label-md flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px]">schema</span>
+<span>2D Schematic</span>
+</button>
+<button class="px-space-md py-1.5 h-9 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px]">view_in_ar</span>
+<span>3D Lab Spatial</span>
+</button>
+</div>
+</div>
+<!-- Workbench Canvas Actions -->
+<div class="flex items-center gap-space-xs">
+<button class="h-9 px-space-md bg-surface-container-low text-on-surface hover:bg-surface-container font-label-md text-label-md rounded flex items-center gap-1.5 transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px] text-primary">add_circle</span>
+<span>+ New Component</span>
+</button>
+<button class="h-9 px-space-md bg-surface-container-low text-on-surface hover:bg-surface-container font-label-md text-label-md rounded flex items-center gap-1.5 transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px]">auto_fix_high</span>
+<span>Reset Layout</span>
+</button>
+<button class="h-9 px-space-md bg-surface-container-low text-on-surface hover:bg-surface-container font-label-md text-label-md rounded flex items-center gap-1.5 transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px]">file_download</span>
+<span>Save .saq</span>
+</button>
+<button class="h-9 px-space-md bg-surface-container-low text-on-surface hover:bg-surface-container font-label-md text-label-md rounded flex items-center gap-1.5 transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px]">folder_open</span>
+<span>Load</span>
+</button>
+</div>
+</div>
+<!-- Subsystem Domain Bar -->
+<div class="flex items-center gap-space-xs overflow-x-auto pb-1 pt-0.5">
+<!-- 1. Electrical (Selected) -->
+<button class="h-9 px-space-md rounded bg-primary text-on-primary font-label-md text-label-md flex items-center gap-2 whitespace-nowrap shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-fixed" type="button">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed">bolt</span>
+<span class="font-medium">Electrical &amp; Power</span>
+<span class="px-1.5 py-0.2 rounded bg-tertiary-container text-on-tertiary-container font-label-sm text-label-sm font-semibold">5/6 · 1 Action</span>
+</button>
+<!-- 2. Wiring & Buses -->
+<button class="h-9 px-space-md rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md flex items-center gap-2 whitespace-nowrap transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px] text-secondary">cable</span>
+<span>Wiring &amp; Buses</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm">4/4 passed</span>
+</button>
+<!-- 3. Mechanical -->
+<button class="h-9 px-space-md rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md flex items-center gap-2 whitespace-nowrap transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px] text-outline">precision_manufacturing</span>
+<span>Mechanical</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm">4/4 passed</span>
+</button>
+<!-- 4. Propulsion -->
+<button class="h-9 px-space-md rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md flex items-center gap-2 whitespace-nowrap transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px] text-secondary">mode_fan</span>
+<span>Propulsion</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm">4/4 passed</span>
+</button>
+<!-- 5. Avionics -->
+<button class="h-9 px-space-md rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md flex items-center gap-2 whitespace-nowrap transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px] text-primary">developer_board</span>
+<span>Avionics</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm">4/4 passed</span>
+</button>
+<!-- 6. Comms -->
+<button class="h-9 px-space-md rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md flex items-center gap-2 whitespace-nowrap transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px] text-outline">settings_input_antenna</span>
+<span>Comms</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm">3/3 passed</span>
+</button>
+<!-- 7. Safety -->
+<button class="h-9 px-space-md rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md flex items-center gap-2 whitespace-nowrap transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px] text-tertiary">health_and_safety</span>
+<span>Safety</span>
+<span class="px-1.5 py-0.2 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm">3/4 · Review</span>
+</button>
+</div>
+</section>
+<!-- Central Multi-Viewport Split Workbench: Schematic Canvas (Left) + Inspector Panel (Right) -->
+<div class="flex flex-col lg:flex-row w-full gap-space-sm p-space-sm">
+<!-- Central CAD Schematic Canvas Container -->
+<div class="relative flex-1 bg-surface-container-low rounded-lg shadow-sm overflow-hidden flex flex-col min-h-[640px]">
+<!-- Canvas Status Bar Overlay -->
+<div class="absolute top-space-sm left-space-sm z-20 flex flex-wrap items-center gap-space-xs bg-surface-container-lowest/95 backdrop-blur px-space-md py-1.5 rounded shadow-sm">
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-wider">Topology Model</span>
+<span class="text-outline text-body-sm">·</span>
+<span class="font-label-md text-label-md text-on-surface">Main_Power_Distribution.net</span>
+<span class="w-2 h-2 rounded-full bg-primary ml-1"></span>
+<span class="font-label-sm text-label-sm text-primary">Live Solver Synchronized</span>
+</div>
+<!-- Bus Line Legend Overlay -->
+<div class="absolute top-space-sm right-space-sm z-20 hidden md:flex items-center gap-space-md bg-surface-container-lowest/95 backdrop-blur px-space-md py-1.5 rounded shadow-sm font-label-sm text-label-sm">
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-1 bg-error rounded-full"></span>
+<span class="text-on-surface-variant">VBAT 14.8V</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-1 bg-tertiary rounded-full"></span>
+<span class="text-on-surface-variant">5.0V Logic</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-1 bg-primary rounded-full"></span>
+<span class="text-on-surface-variant">CAN Bus Diff</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-1 bg-secondary rounded-full"></span>
+<span class="text-on-surface-variant">UART / DShot</span>
+</div>
+</div>
+<!-- CAD Coordinate Grid Visual Ground -->
+<div class="relative w-full h-full flex-1 p-space-lg overflow-auto bg-surface-container-low" style="background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px); background-size: 20px 20px;">
+<!-- Schematic SVG Diagram Layer -->
+<div class="relative w-[880px] min-h-[580px] mx-auto mt-4">
+<!-- Vector Connections SVG Overlay -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+<!-- Battery to Fuse -->
+<path d="M 120 70 L 170 70" fill="none" stroke="#ba1a1a" stroke-linecap="round" stroke-width="2.5"></path>
+<!-- Fuse to PDB -->
+<path d="M 270 70 L 320 70" fill="none" stroke="#ba1a1a" stroke-linecap="round" stroke-width="2.5"></path>
+<!-- PDB to PM02 ADC -->
+<path d="M 450 70 L 510 70" fill="none" stroke="#ba1a1a" stroke-linecap="round" stroke-width="2.5"></path>
+<!-- PM02 to CubeOrange+ VDD -->
+<path d="M 640 70 L 700 70" fill="none" stroke="#ba1a1a" stroke-linecap="round" stroke-width="2.5"></path>
+<!-- PM02 to CubeOrange+ 5V Reg -->
+<path d="M 640 85 L 700 85" fill="none" stroke="#8d4b00" stroke-dasharray="3,3" stroke-width="2"></path>
+<!-- PDB to ESC 1 (Top Right) -->
+<path d="M 430 115 L 430 160 L 260 160 L 260 200" fill="none" stroke="#ba1a1a" stroke-width="2"></path>
+<!-- PDB to ESC 2 -->
+<path d="M 430 115 L 430 160 L 410 160 L 410 200" fill="none" stroke="#ba1a1a" stroke-width="2"></path>
+<!-- PDB to ESC 3 (Alert line in amber) -->
+<path d="M 430 115 L 430 160 L 560 160 L 560 200" fill="none" stroke="#8d4b00" stroke-dasharray="4,2" stroke-width="3"></path>
+<!-- PDB to ESC 4 -->
+<path d="M 430 115 L 430 160 L 710 160 L 710 200" fill="none" stroke="#ba1a1a" stroke-width="2"></path>
+<!-- Flight Controller DShot to ESCs -->
+<path d="M 720 140 L 720 180 L 240 180 L 240 200" fill="none" stroke="#006780" stroke-dasharray="2,2" stroke-width="1.5"></path>
+<path d="M 720 140 L 720 180 L 390 180 L 390 200" fill="none" stroke="#006780" stroke-dasharray="2,2" stroke-width="1.5"></path>
+<path d="M 720 140 L 720 180 L 540 180 L 540 200" fill="none" stroke="#006780" stroke-dasharray="2,2" stroke-width="1.5"></path>
+<path d="M 720 140 L 720 180 L 690 180 L 690 200" fill="none" stroke="#006780" stroke-dasharray="2,2" stroke-width="1.5"></path>
+<!-- Avionics CAN and UART Buses (Bottom Row) -->
+<path d="M 760 140 L 760 380 L 150 380 L 150 420" fill="none" stroke="#00685b" stroke-width="2"></path>
+<path d="M 770 140 L 770 370 L 360 370 L 360 420" fill="none" stroke="#006780" stroke-width="2"></path>
+<path d="M 780 140 L 780 360 L 570 360 L 570 420" fill="none" stroke="#006780" stroke-width="2"></path>
+<path d="M 790 140 L 790 350 L 780 350 L 780 420" fill="none" stroke="#006780" stroke-width="2"></path>
+</svg>
+<!-- Top Row Nodes: Primary Power Line -->
+<!-- 1. Battery -->
+<div class="absolute left-0 top-6 w-[120px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1 focus-within:ring-2 focus-within:ring-primary">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-primary">PWR-01</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+</div>
+<span class="font-headline-sm text-body-lg text-on-surface font-semibold">4S LiPo</span>
+<div class="flex flex-col font-label-sm text-label-sm text-outline">
+<span>14.8V Nom · 5200mAh</span>
+<span>XT60 Gold-Plated</span>
+</div>
+<span class="mt-1 px-1 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm text-center">AWG 12 Output</span>
+</div>
+<!-- 2. Fuse Node -->
+<div class="absolute left-[170px] top-7 w-[100px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm font-semibold text-outline">FUSE-60A</span>
+<span class="material-symbols-outlined text-primary text-[14px]">check_circle</span>
+</div>
+<span class="font-label-md text-label-md font-semibold text-on-surface">60A In-Line</span>
+<span class="font-label-sm text-label-sm text-primary">Status: PASS</span>
+</div>
+<!-- 3. PDB Node -->
+<div class="absolute left-[320px] top-4 w-[130px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-primary">PDB-01</span>
+<span class="font-label-sm text-label-sm text-outline">HEX</span>
+</div>
+<span class="font-headline-sm text-body-lg text-on-surface font-semibold">Matek PDB</span>
+<div class="flex flex-col font-label-sm text-label-sm text-on-surface-variant">
+<span>12V AUX (2A)</span>
+<span>5.0V Logic (5A)</span>
+<span class="text-primary font-medium">5.05V Monitored OK</span>
+</div>
+</div>
+<!-- 4. ADC Sensor Node -->
+<div class="absolute left-[510px] top-5 w-[130px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-secondary">ADC-SENS</span>
+<span class="material-symbols-outlined text-primary text-[14px]">verified</span>
+</div>
+<span class="font-label-md text-label-md font-semibold text-on-surface">PM02 V2 ADC</span>
+<div class="flex flex-col font-label-sm text-label-sm text-outline">
+<span>Volt: 10.1 V/V</span>
+<span>Curr: 36.4 A/V</span>
+<span class="text-on-surface font-label-sm text-label-sm">BATT_VOLT_PIN 14</span>
+</div>
+</div>
+<!-- 5. Flight Controller (CubeOrange+) Master Node -->
+<div class="absolute left-[700px] top-2 w-[170px] bg-surface-container-lowest rounded shadow-md p-space-md flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm font-semibold text-primary uppercase">AUTOPILOT</span>
+<span class="px-1.5 py-0.5 rounded bg-primary text-on-primary font-label-sm text-label-sm">MASTER</span>
+</div>
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">CubeOrange+</span>
+<div class="flex flex-col font-label-sm text-label-sm text-outline gap-0.5 mt-1">
+<span class="text-on-surface font-medium">STM32H757 Dual Core</span>
+<span>Main DShot600 (Ch 1-4)</span>
+<span>CAN1: DroneCAN Node 1</span>
+<span>TELEM1: 57600 baud</span>
+</div>
+</div>
+<!-- Mid Row: 4 ESC Propulsion Arms -->
+<!-- ESC 1 -->
+<div class="absolute left-[200px] top-[200px] w-[110px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm font-semibold text-on-surface">ESC 1 (CW)</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+</div>
+<span class="font-label-sm text-label-sm text-outline">Tekko32 45A</span>
+<span class="font-label-sm text-label-sm text-on-surface">AWG 14 Power</span>
+<span class="font-label-sm text-label-sm text-primary">Peak 22.1A (OK)</span>
+</div>
+<!-- ESC 2 -->
+<div class="absolute left-[350px] top-[200px] w-[110px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm font-semibold text-on-surface">ESC 2 (CCW)</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+</div>
+<span class="font-label-sm text-label-sm text-outline">Tekko32 45A</span>
+<span class="font-label-sm text-label-sm text-on-surface">AWG 14 Power</span>
+<span class="font-label-sm text-label-sm text-primary">Peak 21.8A (OK)</span>
+</div>
+<!-- ESC 3 (THE CRITICAL WARNING ARM) -->
+<div class="absolute left-[500px] top-[200px] w-[130px] bg-surface-container-lowest rounded shadow-md p-space-sm flex flex-col gap-1 ring-2 ring-tertiary">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm font-semibold text-tertiary">ESC 3 (CCW)</span>
+<span class="material-symbols-outlined text-tertiary text-[14px]">warning</span>
+</div>
+<span class="font-label-sm text-label-sm text-outline">Tekko32 45A</span>
+<div class="p-1 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm flex flex-col">
+<span class="font-semibold">AWG 16 [ALERT]</span>
+<span>Peak 38.2A &gt; 22A</span>
+</div>
+<span class="font-label-sm text-label-sm text-tertiary font-medium">Ampacity violation</span>
+</div>
+<!-- ESC 4 -->
+<div class="absolute left-[650px] top-[200px] w-[110px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm font-semibold text-on-surface">ESC 4 (CW)</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+</div>
+<span class="font-label-sm text-label-sm text-outline">Tekko32 45A</span>
+<span class="font-label-sm text-label-sm text-on-surface">AWG 14 Power</span>
+<span class="font-label-sm text-label-sm text-primary">Peak 22.0A (OK)</span>
+</div>
+<!-- Bottom Row: Peripherals & Avionics Bus -->
+<!-- 1. Here4 GNSS -->
+<div class="absolute left-[80px] top-[420px] w-[140px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-primary">CAN BUS 1</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+</div>
+<span class="font-label-md text-label-md font-semibold text-on-surface">Here4 GNSS RTK</span>
+<span class="font-label-sm text-label-sm text-outline">DroneCAN Node 12</span>
+<span class="font-label-sm text-label-sm text-primary">Dual Compass OK</span>
+</div>
+<!-- 2. SiK Telemetry -->
+<div class="absolute left-[290px] top-[420px] w-[140px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-secondary">TELEM 1</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+</div>
+<span class="font-label-md text-label-md font-semibold text-on-surface">SiK 915MHz Radio</span>
+<span class="font-label-sm text-label-sm text-outline">57600 baud · Air/Gnd</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">MAVLink v2.0</span>
+</div>
+<!-- 3. ELRS Receiver -->
+<div class="absolute left-[500px] top-[420px] w-[140px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-secondary">RC SERIAL 6</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+</div>
+<span class="font-label-md text-label-md font-semibold text-on-surface">ELRS 2.4G RX</span>
+<span class="font-label-sm text-label-sm text-outline">CRSF Protocol · 400k</span>
+<span class="font-label-sm text-label-sm text-primary">Lurch Filter Armed</span>
+</div>
+<!-- 4. RPi CM4 Companion -->
+<div class="absolute left-[710px] top-[420px] w-[150px] bg-surface-container-lowest rounded shadow-sm p-space-sm flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-secondary">TELEM 2 / ETH</span>
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+</div>
+<span class="font-label-md text-label-md font-semibold text-on-surface">RPi CM4 Carrier</span>
+<span class="font-label-sm text-label-sm text-outline">Companion · SITL link</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">921600 baud DMA</span>
+</div>
+</div>
+</div>
+<!-- Floating Canvas Navigation Controls & Minimap -->
+<div class="absolute bottom-space-md left-space-md z-20 flex items-center gap-space-xs bg-surface-container-lowest shadow-md rounded p-1">
+<button class="w-9 h-9 flex items-center justify-center rounded hover:bg-surface-container text-on-surface focus:outline-none focus:ring-2 focus:ring-primary" title="Zoom in" type="button">
+<span class="material-symbols-outlined text-[18px]">add</span>
+</button>
+<button class="w-9 h-9 flex items-center justify-center rounded hover:bg-surface-container text-on-surface focus:outline-none focus:ring-2 focus:ring-primary" title="Zoom out" type="button">
+<span class="material-symbols-outlined text-[18px]">remove</span>
+</button>
+<span class="px-space-xs font-label-sm text-label-sm text-on-surface-variant select-none">100%</span>
+<div class="h-4 w-px bg-surface-container"></div>
+<button class="h-9 px-space-sm flex items-center gap-1 rounded hover:bg-surface-container text-on-surface font-label-sm text-label-sm focus:outline-none focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px]">fit_screen</span>
+<span>Fit View</span>
+</button>
+<button class="h-9 px-space-sm flex items-center gap-1 rounded bg-surface-container text-primary font-label-sm text-label-sm focus:outline-none focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px]">grid_4x4</span>
+<span>Grid Snap [4mm]</span>
+</button>
+</div>
+<!-- Compact 1:5 Schematic Minimap -->
+<div class="absolute bottom-space-md right-space-md z-20 w-36 h-24 bg-surface-container-lowest/90 backdrop-blur rounded shadow-md p-1.5 hidden sm:flex flex-col justify-between">
+<div class="flex items-center justify-between font-label-sm text-label-sm text-outline">
+<span>MINIMAP</span>
+<span>1:5</span>
+</div>
+<div class="relative w-full h-14 bg-surface-container-low rounded overflow-hidden">
+<div class="absolute top-1 left-2 w-4 h-2 bg-error rounded-xs"></div>
+<div class="absolute top-1 left-8 w-6 h-3 bg-on-surface-variant rounded-xs"></div>
+<div class="absolute top-1 right-2 w-8 h-4 bg-primary rounded-xs"></div>
+<div class="absolute top-6 left-6 w-16 h-3 bg-tertiary-fixed rounded-xs border-dashed"></div>
+<!-- Viewport Frame Indicator -->
+<div class="absolute inset-1 border border-primary bg-primary/10 rounded-xs pointer-events-none"></div>
+</div>
+</div>
+</div>
+<!-- Right 360px Inspector Panel ('Domain review') -->
+<aside class="w-full lg:w-[360px] bg-surface-container-lowest rounded-lg shadow-sm flex flex-col p-space-md gap-space-md">
+<!-- Panel Header -->
+<div class="flex flex-col gap-1 pb-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-outline tracking-wider">Subsystem Inspection</span>
+<span class="px-2 py-0.5 rounded bg-tertiary-container text-on-tertiary-container font-label-sm text-label-sm font-semibold">5 of 6 Passed</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Domain review — Electrical &amp; Power</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+          Validate voltage tolerances, trace current ratings, and dual-redundancy paths prior to hardware SITL simulation injection.
+        </p>
+</div>
+<!-- Verification Checklist -->
+<div class="flex flex-col gap-space-xs overflow-y-auto pr-0.5">
+<!-- Checklist 1 -->
+<div class="p-space-sm rounded bg-surface-container-low flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">1. Logic rail regulation</span>
+<span class="flex items-center gap-1 font-label-sm text-label-sm text-primary font-semibold">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> PASS
+            </span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">5.05V nominal (+1.0% tolerance margin)</span>
+</div>
+<!-- Checklist 2 -->
+<div class="p-space-sm rounded bg-surface-container-low flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">2. ADC sensor calibration</span>
+<span class="flex items-center gap-1 font-label-sm text-label-sm text-primary font-semibold">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> PASS
+            </span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">BATT_VOLT_PIN, BATT_CURR_PIN mapped</span>
+</div>
+<!-- Checklist 3 -->
+<div class="p-space-sm rounded bg-surface-container-low flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">3. Reverse polarity protection</span>
+<span class="flex items-center gap-1 font-label-sm text-label-sm text-primary font-semibold">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> PASS
+            </span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">Ideal diode series path confirmed</span>
+</div>
+<!-- Checklist 4 -->
+<div class="p-space-sm rounded bg-surface-container-low flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">4. Hover current margin</span>
+<span class="flex items-center gap-1 font-label-sm text-label-sm text-primary font-semibold">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> PASS
+            </span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">24.8A hover (&lt; 60A fuse continuous rating)</span>
+</div>
+<!-- Checklist 5: FAILING ITEM / CRITICAL ACTION -->
+<div class="p-space-sm rounded bg-tertiary-fixed text-on-tertiary-fixed flex flex-col gap-1.5 shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold">5. Power wiring rated</span>
+<span class="flex items-center gap-1 font-label-sm text-label-sm font-bold text-tertiary">
+<span class="material-symbols-outlined text-[14px]">error</span> ACTION REQUIRED
+            </span>
+</div>
+<p class="font-body-sm text-body-sm leading-normal">
+            AWG 16 wire detected between PDB and ESC 3. Requires AWG 14 minimum for peak burst currents (&gt;35A per arm).
+          </p>
+<div class="flex items-center justify-between font-label-sm text-label-sm pt-1">
+<span>Thermal rise: +48°C / 5s</span>
+<span class="font-bold underline cursor-pointer">View thermal simulation</span>
+</div>
+</div>
+<!-- Checklist 6 -->
+<div class="p-space-sm rounded bg-surface-container-low flex flex-col gap-0.5">
+<div class="flex items-center justify-between">
+<span class="font-label-md text-label-md font-semibold text-on-surface">6. Emergency isolator cut-off</span>
+<span class="flex items-center gap-1 font-label-sm text-label-sm text-primary font-semibold">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> PASS
+            </span>
+</div>
+<span class="font-body-sm text-body-sm text-outline">Hard-wire safe arming switch integrated</span>
+</div>
+</div>
+<!-- Action Panel Buttons -->
+<div class="flex flex-col gap-space-xs mt-auto pt-space-xs">
+<!-- 38px Amber Action Button -->
+<button class="w-full h-[38px] px-space-md rounded bg-tertiary text-on-tertiary font-label-md text-label-md font-medium flex items-center justify-center gap-2 hover:bg-tertiary-container transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-tertiary" type="button">
+<span class="material-symbols-outlined text-[18px]">build</span>
+<span>Review / resolve wire gauge (AWG 14)</span>
+</button>
+<!-- Secondary Button: Run ERC -->
+<button class="w-full h-9 px-space-md rounded bg-surface-container-low text-on-surface hover:bg-surface-container font-label-md text-label-md flex items-center justify-center gap-2 transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[16px] text-primary">rule</span>
+<span>Run Electrical Rule Check (ERC)</span>
+</button>
+<!-- Next Domain Link -->
+<a class="flex items-center justify-between pt-2 px-space-xs font-label-sm text-label-sm text-primary hover:text-primary-container font-semibold transition-colors" href="#">
+<span>Proceed to Wiring &amp; Buses validation</span>
+<span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</a>
+</div>
+</aside>
+</div>
+<!-- Footer Evidence Strip (3 Unified Technical Cards) -->
+<section class="grid grid-cols-1 md:grid-cols-3 gap-space-sm px-space-sm pb-space-sm">
+<!-- Card 1: Design Snapshot -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg shadow-sm flex flex-col justify-between gap-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-outline">Design Snapshot</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant font-mono">SHA-7f02a</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md font-semibold text-on-surface">QuadX_Rev2.4.saq</span>
+<span class="font-body-sm text-body-sm text-outline">Local workspace cached · 2 unsaved edits</span>
+</div>
+<div class="flex items-center justify-between pt-1">
+<span class="font-label-sm text-label-sm text-primary">Working tree clean</span>
+<button class="h-9 px-space-md bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md rounded flex items-center gap-1 transition-colors focus:ring-2 focus:ring-primary" type="button">
+<span class="material-symbols-outlined text-[14px]">save</span>
+<span>Commit state</span>
+</button>
+</div>
+</div>
+<!-- Card 2: Domain Verification Summary -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg shadow-sm flex flex-col justify-between gap-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-outline">Domain Verification</span>
+<span class="px-1.5 py-0.2 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-semibold">1 Warning</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md font-semibold text-on-surface">Electrical Wire Ampacity</span>
+<p class="font-body-sm text-body-sm text-outline leading-tight">
+          Requires wire upgrade or manual override signed off with Lead Avionics clearance.
+        </p>
+</div>
+<div class="flex items-center gap-1 font-label-sm text-label-sm text-tertiary font-medium pt-1">
+<span class="material-symbols-outlined text-[14px]">pending_actions</span>
+<span>Override signature: Awaiting sign-off</span>
+</div>
+</div>
+<!-- Card 3: Simulation Result & SITL Inject Button -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg shadow-sm flex flex-col justify-between gap-space-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase font-semibold text-outline">Simulation Result</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm font-semibold">STANDBY</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md font-semibold text-on-surface">SITL Ready State</span>
+<span class="font-body-sm text-body-sm text-outline">Waiting for ERC clearance to initialize SITL environment.</span>
+</div>
+<div class="pt-1">
+<button class="w-full h-9 px-space-md bg-surface-container text-outline cursor-not-allowed font-label-md text-label-md rounded flex items-center justify-center gap-1.5 opacity-80" disabled="" type="button">
+<span class="material-symbols-outlined text-[16px]">play_disabled</span>
+<span>Inject SITL flight vectors</span>
+</button>
+</div>
+</div>
+</section>
+</div></main></div><footer class="fixed bottom-0 left-0 right-0 h-7 bg-inverse-surface text-inverse-on-surface z-50 flex items-center justify-between px-space-lg font-label-sm text-label-sm shadow-[0_-1px_6px_rgba(0,0,0,0.08)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs text-outline-variant"><span class="w-2 h-2 rounded-full bg-outline"></span><span>Telemetry stopped · SITL not running</span></div></div><div class="flex items-center gap-space-lg text-outline-variant"><div class="flex items-center gap-space-xs"><span class="text-outline">PROFILE:</span><span class="text-inverse-on-surface font-label-md">QuadX_Default_4.5.4</span></div><div class="flex items-center gap-space-xs"><span class="text-outline">TARGET:</span><span class="text-inverse-on-surface font-label-md">SITL_x86_64</span></div><div class="flex items-center gap-space-xs"><span class="text-outline">PORT:</span><span class="text-inverse-on-surface font-label-md">5760</span></div></div></footer></body></html>

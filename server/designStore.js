@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +11,15 @@ const designsDir = path.join(dataDir, "designs");
 // randomUUID(). This intentionally allows any UUID version for compatibility
 // with designs created by older releases or imported from other tools.
 export const DESIGN_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const MAX_DESIGN_BYTES = 10 * 1024 * 1024;
+
+export class DesignStoreError extends Error {
+  constructor(message, statusCode) {
+    super(message);
+    this.name = "DesignStoreError";
+    this.statusCode = statusCode;
+  }
+}
 
 async function ensureStore() {
   await mkdir(designsDir, { recursive: true });
@@ -31,6 +40,13 @@ function normalizeDesign(design) {
   };
 }
 
+function isStoredDesign(value, id) {
+  return value !== null && typeof value === "object" && typeof value.id === "string" && value.id.toLowerCase() === id.toLowerCase() &&
+    typeof value.name === "string" && value.name.trim().length > 0 &&
+    Array.isArray(value.nodes) && Array.isArray(value.edges) &&
+    value.settings !== null && typeof value.settings === "object" && !Array.isArray(value.settings);
+}
+
 function resolveStoreFile(fileName) {
   const root = path.resolve(designsDir);
   const target = path.resolve(root, fileName);
@@ -45,12 +61,19 @@ function resolveStoreFile(fileName) {
 
 export async function saveDesign(design) {
   const normalized = normalizeDesign(design);
+  if (!isStoredDesign(normalized, normalized.id)) {
+    throw new DesignStoreError("Workspace must include a name, nodes, edges, and settings.", 400);
+  }
+  const content = JSON.stringify(normalized, null, 2);
+  if (Buffer.byteLength(content, "utf8") > MAX_DESIGN_BYTES) {
+    throw new DesignStoreError("Saved workspace exceeds the 10 MB limit. Reduce the workspace size.", 413);
+  }
   const target = resolveStoreFile(`${normalized.id}.json`);
   const temporaryTarget = resolveStoreFile(`.${normalized.id}.${process.pid}.${randomUUID()}.tmp`);
 
   await ensureStore();
   try {
-    await writeFile(temporaryTarget, JSON.stringify(normalized, null, 2), { encoding: "utf8", flag: "wx" });
+    await writeFile(temporaryTarget, content, { encoding: "utf8", flag: "wx" });
     await rename(temporaryTarget, target);
   } finally {
     await rm(temporaryTarget, { force: true });
@@ -59,15 +82,50 @@ export async function saveDesign(design) {
   return normalized;
 }
 
-export async function listDesigns() {
-  await ensureStore();
-  const files = await readdir(designsDir);
-  const designs = [];
+export async function loadDesign(id) {
+  if (typeof id !== "string" || !DESIGN_ID_PATTERN.test(id)) {
+    throw new DesignStoreError("Design id must use the canonical UUID format.", 400);
+  }
+  const target = resolveStoreFile(`${id}.json`);
+  try {
+    const info = await lstat(target);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_DESIGN_BYTES) {
+      throw new DesignStoreError("Saved workspace is not a regular workspace file or exceeds the 10 MB limit.", 422);
+    }
+    const stored = JSON.parse(await readFile(target, "utf8"));
+    if (!isStoredDesign(stored, id)) {
+      throw new DesignStoreError("Saved workspace has invalid data. Restore it from an exported .saq file.", 422);
+    }
+    return stored;
+  } catch (error) {
+    if (error.code === "ENOENT") throw new DesignStoreError("Saved workspace was not found. Refresh the workspace list.", 404);
+    if (error instanceof SyntaxError) throw new DesignStoreError("Saved workspace contains invalid JSON. Restore it from an exported .saq file.", 422);
+    throw error;
+  }
+}
 
-  for (const file of files.filter((entry) => DESIGN_ID_PATTERN.test(path.basename(entry, ".json")) && entry.endsWith(".json"))) {
-    const content = await readFile(resolveStoreFile(file), "utf8");
-    designs.push(JSON.parse(content));
+export async function listDesigns({ query = "", limit = 500 } = {}) {
+  await ensureStore();
+  const files = await readdir(designsDir, { withFileTypes: true });
+  const designs = [];
+  const search = String(query).trim().toLowerCase().slice(0, 200);
+  const resultLimit = Math.max(1, Math.min(500, Number(limit) || 500));
+
+  for (const file of files.filter((entry) => entry.isFile() && entry.name.endsWith(".json") && DESIGN_ID_PATTERN.test(path.basename(entry.name, ".json")))) {
+    try {
+      const design = await loadDesign(path.basename(file.name, ".json"));
+      const searchable = [design.name, design.id, design.settings.vehicle, design.settings.frame].join(" ").toLowerCase();
+      if (!search || searchable.includes(search)) {
+        designs.push(design);
+        designs.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+        if (designs.length > resultLimit) designs.length = resultLimit;
+      }
+    } catch (error) {
+      // A damaged or concurrently removed file must not hide every healthy workspace.
+      if (error instanceof DesignStoreError || ["EACCES", "EPERM"].includes(error.code)) continue;
+      throw error;
+    }
   }
 
-  return designs.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+  return designs.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt))).slice(0, resultLimit);
 }

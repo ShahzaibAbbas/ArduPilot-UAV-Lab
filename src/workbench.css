@@ -316,6 +316,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .gcs-connection-guide dt { font-weight: 700; }
 .gcs-connection-guide dd { margin: 0; overflow-wrap: anywhere; }
 .gcs-connection-guide code { user-select: all; }
+.gcs-link-status { display: grid; gap: 5px; margin: 8px 0; padding: 10px; border: 1px solid #dce6ea; border-radius: 7px; background: #fff; font-size: 11px; color: #506371; }
+.gcs-link-status strong { color: #213242; font-size: 12px; }
+.gcs-link-status ul { margin: 0; padding-left: 16px; }
+.panel-warning { padding: 8px 10px; border: 1px solid #f2dbb6; border-radius: 7px; background: #fffbf2; color: #8a4a00; font-size: 11px; line-height: 1.5; }
 .sitl-console-panel { margin-top: 14px; padding: 12px; border: 1px solid #dce6ea; border-radius: 8px; background: #fbfdfd; }
 .sitl-console-panel h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: #244052; }
 .sitl-console-help { margin: 7px 0; color: #607380; font-size: 11px; line-height: 1.45; }

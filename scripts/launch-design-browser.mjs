@@ -2,13 +2,15 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { runtimePorts } from "../server/runtimeConfig.js";
+import { restoreDesignBrowserWindow } from "./design-browser-window.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const localDataRoot =
   process.env.LOCALAPPDATA || process.env.XDG_DATA_HOME || path.join(process.env.HOME || projectRoot, ".local", "share");
 const profileDir = path.join(localDataRoot, "Ardupilot_Simulator", "design-browser-profile");
-const defaultUrl = process.env.DESIGN_BROWSER_URL || "http://127.0.0.1:5173/";
+const defaultUrl = process.env.DESIGN_BROWSER_URL || runtimePorts().clientUrl;
 const defaultSize = process.env.DESIGN_BROWSER_SIZE || "1920x1080";
 const defaultWaitMs = Number(process.env.DESIGN_BROWSER_WAIT_MS || 60000);
 const browserControlsScript = String.raw`
@@ -171,7 +173,10 @@ const browserControlsScript = String.raw`
 function parseArgs() {
   const args = new Map();
   for (const arg of process.argv.slice(2)) {
-    const [key, value = "true"] = arg.replace(/^--/, "").split("=");
+    const option = arg.replace(/^--/, "");
+    const separator = option.indexOf("=");
+    const key = separator < 0 ? option : option.slice(0, separator);
+    const value = separator < 0 ? "true" : option.slice(separator + 1);
     args.set(key, value);
   }
   return args;
@@ -197,7 +202,7 @@ async function waitForUrl(url, timeoutMs) {
 
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(url, { cache: "no-store" });
+      const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(Math.min(3000, Math.max(1, deadline - Date.now()))) });
       if (response.ok) {
         return;
       }
@@ -274,6 +279,9 @@ async function launchDesignBrowser() {
   const size = parseSize(args.get("size") || defaultSize);
   const useKiosk = args.get("kiosk") === "true";
   const waitMs = Number(args.get("wait-ms") || defaultWaitMs);
+  if (!Number.isFinite(waitMs) || waitMs < 0) {
+    throw new Error("DESIGN_BROWSER_WAIT_MS and --wait-ms must be a non-negative number of milliseconds.");
+  }
   const browserArgs = [
     `--app=${url}`,
     "--new-window",
@@ -309,7 +317,7 @@ async function launchDesignBrowser() {
     await page.goto(url);
   }
 
-  await page.bringToFront();
+  await restoreDesignBrowserWindow(page, size);
   console.log(`Design browser launched: ${url}`);
   console.log(`Profile: ${profileDir}`);
   console.log("Move the cursor to the upper-right edge to reveal Minimize and Close.");

@@ -12,7 +12,7 @@
     "own:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
     "design:browser": "node scripts/launch-design-browser.mjs",
     "design:browser:kiosk": "node scripts/launch-design-browser.mjs --kiosk",
-    "test": "node --test server/localOrigin.test.js server/designStore.test.js server/sitl.test.js server/sitlConnection.test.js server/gazebo.test.js server/runtime.test.js server/setup.test.js server/firmware.test.js server/trace.test.js server/gcsBridge.test.js server/companionVm.test.js server/sitlConsole.test.js scripts/three-workspace.test.mjs scripts/source-package.test.mjs server/airframes.test.js server/wslSession.test.js scripts/validation.test.mjs scripts/engineering-acceptance.test.mjs scripts/auto-wire.test.mjs scripts/sitl-maintenance.test.mjs",
+    "test": "node --test server/localOrigin.test.js server/designStore.test.js server/sitl.test.js server/sitlConnection.test.js server/gazebo.test.js server/artifacts.test.js server/runtime.test.js server/runtimeDisplay.test.js server/setup.test.js server/firmware.test.js server/missionFiles.test.js server/trace.test.js server/gcsBridge.test.js server/companionVm.test.js server/sitlConsole.test.js server/batteryModel.test.js server/batteryTelemetry.test.js server/telemetryAdvisor.test.js server/sitlHealth.test.js scripts/telemetry-alerts.test.mjs scripts/three-workspace.test.mjs scripts/design-browser-window.test.mjs scripts/source-package.test.mjs server/airframes.test.js server/wslSession.test.js scripts/validation.test.mjs scripts/engineering-acceptance.test.mjs scripts/auto-wire.test.mjs scripts/sitl-maintenance.test.mjs",
     "test:smoke": "node scripts/phase1-smoke.mjs",
     "test:improvements": "node scripts/workbench-improvements-smoke.mjs",
     "build": "tsc --noEmit && vite build",
@@ -20,7 +20,9 @@
     "github:upload": "node scripts/prepare-github-upload.mjs",
     "test:sitl": "node scripts/sitl-integration.mjs --run",
     "test:airframes": "node scripts/airframes-smoke.mjs",
-    "test:validation": "node scripts/validation-smoke.mjs"
+    "test:battery": "node scripts/battery-smoke.mjs",
+    "test:validation": "node scripts/validation-smoke.mjs",
+    "test:mission": "node scripts/mission-smoke.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -42,7 +44,6 @@
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.2",
     "playwright": "^1.61.1",
     "typescript": "^5.7.3",
     "vite": "^6.0.7"

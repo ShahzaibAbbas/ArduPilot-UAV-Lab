@@ -9,6 +9,7 @@ import type {
   PowerRailId,
   SimulationSettings
 } from "./design";
+import { batteryMetrics } from "../../server/batteryModel.js";
 
 export interface EngineeringCheckInput {
   id: string;
@@ -170,7 +171,7 @@ export function managementWithDefaults(value?: Partial<EngineeringManagementStat
 
 function batteryVoltage(nodes: readonly DesignNode[]) {
   const battery = nodes.find((node) => node.data.componentType === "battery");
-  return battery ? positive(propertyNumber(battery, "cells", 4), 4) * 3.7 : 14.8;
+  return battery ? batteryMetrics(battery.data.properties).nominalVoltageV : 14.8;
 }
 
 function railVoltage(rail: PowerRailId, nodes: readonly DesignNode[]) {
@@ -189,11 +190,13 @@ function defaultLoad(node: DesignNode, nodes: readonly DesignNode[]): Omit<Power
     "airspeed-sensor": { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.08, peakCurrentA: 0.14, dutyCyclePercent: 100, criticality: "mission", shedPriority: 4 },
     "optical-flow": { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.22, peakCurrentA: 0.4, dutyCyclePercent: 80, criticality: "mission", shedPriority: 3 },
     "telemetry-radio": { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.28, peakCurrentA: 0.65, dutyCyclePercent: 85, criticality: "essential", shedPriority: 4 },
+    "virtual-telemetry": { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.08, peakCurrentA: 0.15, dutyCyclePercent: 100, criticality: "essential", shedPriority: 4 },
     "rc-receiver": { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.12, peakCurrentA: 0.25, dutyCyclePercent: 100, criticality: "essential", shedPriority: 5 },
     "adsb-remote-id": { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.22, peakCurrentA: 0.45, dutyCyclePercent: 100, criticality: "mission", shedPriority: 4 },
     parachute: { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.08, peakCurrentA: 1.4, dutyCyclePercent: 5, criticality: "essential", shedPriority: 5 },
     buzzer: { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.08, peakCurrentA: 0.2, dutyCyclePercent: 15, criticality: "essential", shedPriority: 5 },
     camera: { rail: "regulated-12v", enabled: true, nominalCurrentA: 0.55, peakCurrentA: 0.9, dutyCyclePercent: 85, criticality: "mission", shedPriority: 2 },
+    servo: { rail: "regulated-5v", enabled: true, nominalCurrentA: 0.15, peakCurrentA: 1.2, dutyCyclePercent: 60, criticality: "essential", shedPriority: 5 },
     gimbal: { rail: "regulated-12v", enabled: true, nominalCurrentA: 0.8, peakCurrentA: 2.2, dutyCyclePercent: 65, criticality: "mission", shedPriority: 2 }
   };
 
@@ -222,23 +225,22 @@ function defaultLoad(node: DesignNode, nodes: readonly DesignNode[]): Omit<Power
 
 function autoRailLimits(nodes: readonly DesignNode[]): Record<PowerRailId, { continuousCurrentA: number; peakCurrentA: number }> {
   const battery = nodes.find((node) => node.data.componentType === "battery");
-  const batteryMax = battery
-    ? positive(propertyNumber(battery, "capacityMah", 5200), 5200) / 1000 * positive(propertyNumber(battery, "cRating", 35), 35)
-    : 120;
+  const batteryRating = battery ? batteryMetrics(battery.data.properties) : undefined;
+  const batteryValid = batteryRating && !batteryRating.issues.some((issue) => issue.severity === "error");
+  const batteryContinuous = batteryValid ? batteryRating.continuousCurrentA : 0;
+  const batteryPeak = batteryValid ? batteryRating.burstCurrentA : 0;
   const pdb = nodes.find((node) => node.data.componentType === "power-distribution-board");
   const fuse = nodes.find((node) => node.data.componentType === "fuse");
   const harness = nodes.find((node) => node.data.componentType === "wiring-harness");
   const batteryContinuousCandidates = [
-    batteryMax,
     pdb ? propertyNumber(pdb, "continuousCurrentA") : 0,
     fuse ? propertyNumber(fuse, "ratingAmps") : 0,
     harness ? propertyNumber(harness, "maxCurrentA") : 0
   ].filter((value) => value > 0);
   const batteryPeakCandidates = [
-    batteryMax,
-    pdb ? propertyNumber(pdb, "peakCurrentA") : 0,
-    fuse ? propertyNumber(fuse, "ratingAmps") * 1.5 : 0,
-    harness ? propertyNumber(harness, "maxCurrentA") * 1.25 : 0
+    pdb ? propertyNumber(pdb, "peakCurrentA") || propertyNumber(pdb, "continuousCurrentA") : 0,
+    fuse ? propertyNumber(fuse, "ratingAmps") : 0,
+    harness ? propertyNumber(harness, "maxCurrentA") : 0
   ].filter((value) => value > 0);
   const powerModule = nodes.find((node) => node.data.componentType === "power-module");
   const regulated5 = powerModule ? positive(propertyNumber(powerModule, "regulatedMaxAmps", 5), 5) : 5;
@@ -246,8 +248,8 @@ function autoRailLimits(nodes: readonly DesignNode[]): Record<PowerRailId, { con
 
   return {
     "battery-bus": {
-      continuousCurrentA: batteryContinuousCandidates.length ? Math.min(...batteryContinuousCandidates) : 120,
-      peakCurrentA: batteryPeakCandidates.length ? Math.min(...batteryPeakCandidates) : 150
+      continuousCurrentA: Math.min(batteryContinuous, ...batteryContinuousCandidates),
+      peakCurrentA: Math.min(batteryPeak, ...batteryPeakCandidates)
     },
     "regulated-5v": { continuousCurrentA: regulated5, peakCurrentA: regulated5 * 1.5 },
     "regulated-12v": { continuousCurrentA: auxCurrent, peakCurrentA: auxCurrent * 1.5 }
@@ -286,18 +288,26 @@ export function buildPowerBudget(
   const reserveTargetPercent = management.powerReservePercent;
   const rails = railIds.map((id): PowerRailBudget => {
     const railRows = rows.filter((row) => row.rail === id);
-    const continuousCurrentA = railRows.reduce((sum, row) => sum + row.continuousCurrentA, 0);
-    const peakCurrentA = railRows.reduce((sum, row) => sum + row.peakCurrentA, 0);
+    // Every regulated load still draws energy from the battery. This is an ideal
+    // conversion estimate; measured converter losses belong in load overrides.
+    const busVoltageV = railVoltage("battery-bus", nodes);
+    const continuousCurrentA = id === "battery-bus"
+      ? rows.reduce((sum, row) => sum + row.continuousPowerW, 0) / busVoltageV
+      : railRows.reduce((sum, row) => sum + row.continuousCurrentA, 0);
+    const peakCurrentA = id === "battery-bus"
+      ? rows.reduce((sum, row) => sum + row.peakPowerW, 0) / busVoltageV
+      : railRows.reduce((sum, row) => sum + row.peakCurrentA, 0);
     const configured = management.railLimits[id];
-    const continuousLimitA = configured.continuousCurrentA > 0 ? configured.continuousCurrentA : automaticLimits[id].continuousCurrentA;
-    const peakLimitA = configured.peakCurrentA > 0 ? configured.peakCurrentA : automaticLimits[id].peakCurrentA;
+    // A saved planning limit cannot override the installed battery/hardware.
+    const continuousLimitA = configured.continuousCurrentA > 0 ? Math.min(configured.continuousCurrentA, automaticLimits[id].continuousCurrentA) : automaticLimits[id].continuousCurrentA;
+    const peakLimitA = configured.peakCurrentA > 0 ? Math.min(configured.peakCurrentA, automaticLimits[id].peakCurrentA) : automaticLimits[id].peakCurrentA;
     const continuousUtilizationPercent = continuousLimitA > 0 ? (continuousCurrentA / continuousLimitA) * 100 : 0;
     const peakUtilizationPercent = peakLimitA > 0 ? (peakCurrentA / peakLimitA) * 100 : 0;
     return {
       id,
       label: railLabels[id],
       voltageV: railVoltage(id, nodes),
-      loadCount: railRows.length,
+      loadCount: id === "battery-bus" ? rows.length : railRows.length,
       continuousCurrentA,
       peakCurrentA,
       continuousLimitA,
@@ -306,8 +316,8 @@ export function buildPowerBudget(
       peakUtilizationPercent,
       marginA: continuousLimitA - continuousCurrentA,
       reserveTargetPercent,
-      withinReserve: continuousUtilizationPercent <= 100 - reserveTargetPercent,
-      peakWithinLimit: peakUtilizationPercent <= 100
+      withinReserve: continuousLimitA > 0 && continuousUtilizationPercent <= 100 - reserveTargetPercent,
+      peakWithinLimit: peakLimitA > 0 && peakUtilizationPercent <= 100
     };
   });
   const activeRails = rails.filter((rail) => rail.loadCount > 0);

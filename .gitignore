@@ -5,6 +5,10 @@ backups/
 github uploading/
 Updates/
 .codex/
+.jetro/
+.claude/
+.idea/
+.vscode/
 coverage/
 .env
 .env.*
